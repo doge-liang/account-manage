@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "category": "ai_member",
+      "name": "ChatGPT Max 20x",
+      "vendor": "OpenAI",
+      "username": "",
+      "url": "https://chatgpt.com",
+      "status": "active",
+      "notes": "用量查询: 控制台+客户端；用途: 对话/Codex/编码；Plan 附带可调用凭证；Key 部署: 盘点脚本所在机；Key 创建: 2026-01-01；计划轮换: 2026-12-01；台账编号: KEY-001",
+      "fields": {
+        "plan": "ChatGPT Max 20x",
+        "monthly_fee": "200",
+        "currency": "USD",
+        "last_checked": "2026-08-06",
+        "key_alias": "chatgpt-max-20x",
+        "key_last4": "a1b2",
+        "kp_ref": "KeePassXC: AI Keys/OpenAI/chatgpt-max-20x"
+      },
+      "id": "ACC-001",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "ai_member",
+      "name": "Claude Max 20x",
+      "vendor": "Anthropic",
+      "username": "",
+      "url": "https://claude.ai/settings/usage",
+      "status": "active",
+      "notes": "用量查询: 控制台+客户端；用途: Claude Code/编码；Plan 附带可调用凭证；Key 部署: 服务器A,B；Key 创建: 2026-03-01；计划轮换: 2026-09-01；台账编号: KEY-002",
+      "fields": {
+        "plan": "Claude Max 20x",
+        "monthly_fee": "200",
+        "currency": "USD",
+        "last_checked": "2026-08-06",
+        "key_alias": "claude-max-20x",
+        "key_last4": "c3d4",
+        "kp_ref": "KeePassXC: AI Keys/Anthropic/claude-max-20x"
+      },
+      "id": "ACC-002",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "ai_member",
+      "name": "Grok Super #1",
+      "vendor": "xAI",
+      "username": "",
+      "url": "https://grok.com",
+      "status": "active",
+      "notes": "用量查询: 控制台+客户端；用途: Grok 对话/编码；Plan 附带可调用凭证；Key 部署: 笔记本；台账编号: KEY-003",
+      "fields": {
+        "plan": "SuperGrok",
+        "monthly_fee": "30",
+        "currency": "USD",
+        "last_checked": "2026-08-06",
+        "key_alias": "grok-super-1",
+        "key_last4": "e5f6",
+        "kp_ref": "KeePassXC: AI Keys/xAI/grok-super-1"
+      },
+      "id": "ACC-003",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "ai_member",
+      "name": "Grok Super #2",
+      "vendor": "xAI",
+      "username": "",
+      "url": "https://grok.com",
+      "status": "active",
+      "notes": "用量查询: 控制台+客户端；用途: Grok 对话/编码（第二份）；台账编号: KEY-004",
+      "fields": {
+        "plan": "SuperGrok",
+        "monthly_fee": "30",
+        "currency": "USD",
+        "last_checked": "2026-08-06",
+        "key_alias": "grok-super-2",
+        "kp_ref": "KeePassXC: AI Keys/xAI/grok-super-2"
+      },
+      "id": "ACC-004",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "ai_member",
+      "name": "GLM Max",
+      "vendor": "Zhipu",
+      "username": "",
+      "url": "https://open.bigmodel.cn",
+      "status": "active",
+      "notes": "用量查询: 控制台+官方API；用途: GLM 编码/CLI；Plan 附带 API_KEY；台账编号: KEY-005",
+      "fields": {
+        "plan": "GLM Coding Plan Max",
+        "monthly_fee": "469",
+        "currency": "CNY",
+        "last_checked": "2026-08-06",
+        "key_alias": "glm-max",
+        "kp_ref": "KeePassXC: AI Keys/Zhipu/glm-max"
+      },
+      "id": "ACC-005",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "ai_member",
+      "name": "Kimi Allegretto",
+      "vendor": "Moonshot",
+      "username": "",
+      "url": "https://www.kimi.com",
+      "status": "active",
+      "notes": "用量查询: 控制台+官方API；用途: Kimi Code；Plan 附带 API_KEY；台账编号: KEY-006",
+      "fields": {
+        "plan": "Kimi Coding Allegretto",
+        "monthly_fee": "199",
+        "currency": "CNY",
+        "last_checked": "2026-08-06",
+        "key_alias": "kimi-allegretto",
+        "kp_ref": "KeePassXC: AI Keys/Moonshot/kimi-allegretto"
+      },
+      "id": "ACC-006",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "ai_member",
+      "name": "MiniMax Max",
+      "vendor": "MiniMax",
+      "username": "",
+      "url": "https://platform.minimaxi.com",
+      "status": "active",
+      "notes": "用量查询: 控制台+官方API；用途: MiniMax 编码；Plan 附带 API_KEY；台账编号: KEY-007",
+      "fields": {
+        "plan": "MiniMax Max",
+        "monthly_fee": "119",
+        "currency": "CNY",
+        "last_checked": "2026-08-06",
+        "key_alias": "minimax-max",
+        "kp_ref": "KeePassXC: AI Keys/MiniMax/minimax-max"
+      },
+      "id": "ACC-007",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "ai_member",
+      "name": "Gemini Pro",
+      "vendor": "Google",
+      "username": "",
+      "url": "https://gemini.google.com",
+      "status": "active",
+      "notes": "用量查询: 控制台+客户端；用途: Gemini；Plan/配套可调用凭证；台账编号: KEY-008",
+      "fields": {
+        "plan": "Google AI Pro (Gemini)",
+        "monthly_fee": "20",
+        "currency": "USD",
+        "last_checked": "2026-08-06",
+        "key_alias": "gemini-pro",
+        "kp_ref": "KeePassXC: AI Keys/Google/gemini-pro"
+      },
+      "id": "ACC-008",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    },
+    {
+      "category": "api",
+      "name": "DeepSeek 官方 API",
+      "vendor": "DeepSeek",
+      "username": "",
+      "url": "https://platform.deepseek.com",
+      "status": "active",
+      "notes": "按量计费；API_KEY 见 KEY-009。月费填 0，成本看充值/账单",
+      "fields": {
+        "monthly_fee": "0",
+        "currency": "CNY",
+        "billing_date": "",
+        "last_checked": "2026-08-06",
+        "key_alias": "deepseek-api",
+        "key_last4": "",
+        "kp_ref": "KeePassXC: AI Keys/DeepSeek/deepseek-api"
+      },
+      "id": "ACC-009",
+      "created_at": "2026-08-09T06:16:19+00:00",
+      "updated_at": "2026-08-09T18:47:25+00:00"
+    }
+  ],
+  "relations": [],
+  "query_links": [
+    {
+      "category": "phone",
+      "vendor": "中国移动",
+      "label": "话费查询",
+      "url": "https://wap.10086.cn",
+      "id": "q-0001"
+    }
+  ],
+  "usage_configs": [],
+  "settings": {
+    "vault_path": "D:\\account-manage\\keepassxc\\vaults\\ai-keys.kdbx",
+    "name": "账号管家"
+  }
+}

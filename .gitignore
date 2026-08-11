@@ -1,0 +1,32 @@
+# KeePass 数据库（含真实密钥，禁止提交）
+keepassxc/vaults/
+keepassxc/installer/
+*.kdbx
+*.kdbx.lock
+*.keyx
+*.key
+MASTER_PASSWORD.txt
+
+# 应用数据备份（accounts.json 本体可提交/同步）
+app/data/backups/
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 系统
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 用量缓存（临时数据）
+app/data/usage_cache.json*
+

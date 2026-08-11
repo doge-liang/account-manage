@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>账号管家</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-logo"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-card-account-details"></use></svg></span>
+    <span class="brand-name" id="app-name">账号管家</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="dashboard"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-view-dashboard"></use></svg> 仪表盘</button>
+    <button class="tab" data-tab="accounts"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-account"></use></svg> 账号</button>
+    <button class="tab" data-tab="vault"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-key-chain"></use></svg> 密钥库</button>
+    <button class="tab" data-tab="settings"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-cog"></use></svg> 设置</button>
+  </nav>
+  <div class="topbar-right">
+    <span class="save-state" id="save-state"></span>
+    <button class="btn btn-primary" id="btn-new-account">+ 新增账号</button>
+  </div>
+</header>
+
+<main>
+  <!-- 仪表盘 -->
+  <section id="tab-dashboard" class="tab-panel active">
+    <div class="stat-grid" id="stat-grid"></div>
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-chart-bar"></use></svg> AI 用量进度</h3>
+      <div class="hint">按用量接口定时抓取（设置 → 用量接口配置）。未配置接口的账号显示手动填写值。</div>
+      <div id="dash-usage" class="usage-grid"></div>
+    </div>
+    <div class="dash-grid">
+      <div class="card">
+        <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-calendar"></use></svg> 即将发生（7 天内）</h3>
+        <div id="dash-upcoming" class="list-block"></div>
+      </div>
+      <div class="card">
+        <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-alert"></use></svg> 余额 / 用量预警</h3>
+        <div id="dash-alerts" class="list-block"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-credit-card"></use></svg> 月费汇总（按厂商）</h3>
+      <div id="dash-vendor-cost"></div>
+    </div>
+  </section>
+
+  <!-- 账号列表 -->
+  <section id="tab-accounts" class="tab-panel">
+    <div class="toolbar">
+      <input type="search" id="search-input" class="search-box" placeholder="搜索名称 / 厂商 / 账号 / 备注…">
+      <div class="chip-row" id="category-chips"></div>
+      <select id="status-filter" class="select-box">
+        <option value="">全部状态</option>
+        <option value="active">active</option>
+        <option value="inactive">inactive</option>
+        <option value="expired">expired</option>
+      </select>
+    </div>
+    <div class="card">
+      <table class="acc-table" id="acc-table">
+        <thead>
+          <tr>
+            <th>名称</th><th>厂商</th><th>类别</th><th>关键信息</th><th>状态</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="acc-tbody"></tbody>
+      </table>
+      <div id="acc-empty" class="empty-hint" hidden>没有匹配的账号</div>
+    </div>
+  </section>
+
+  <!-- 密钥库 -->
+  <section id="tab-vault" class="tab-panel">
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-key-chain"></use></svg> 密钥库文件（KeePassXC）</h3>
+      <p class="hint">完整 API Key 只存在这里。文件本身由主密码加密，可在你信任的设备间分发；
+      分发后请用主密码在 KeePassXC 中打开验证。</p>
+      <div id="vault-info" class="kv-grid"></div>
+      <div class="btn-row">
+        <button class="btn" id="btn-vault-download"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-download"></use></svg> 下载密钥库</button>
+        <button class="btn" id="btn-vault-refresh"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-refresh"></use></svg> 刷新</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-upload"></use></svg> 上传 / 替换密钥库</h3>
+      <p class="hint">从其他设备拿回更新过的 <code>ai-keys.kdbx</code> 时用。
+      上传前会自动备份当前文件到 <code>vaults/backups/</code>。</p>
+      <div class="drop-zone" id="vault-drop">
+        点击选择或拖拽 <code>.kdbx</code> 文件到此处
+        <input type="file" id="vault-file" accept=".kdbx" hidden>
+      </div>
+      <div id="vault-upload-result" class="result-box" hidden></div>
+    </div>
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-database"></use></svg> 密钥库备份</h3>
+      <div id="vault-backups" class="list-block"></div>
+    </div>
+  </section>
+
+  <!-- 设置 -->
+  <section id="tab-settings" class="tab-panel">
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-pencil"></use></svg> 基本信息</h3>
+      <div class="form-grid">
+        <label>应用名称
+          <input type="text" id="set-name" class="input-box">
+        </label>
+        <label>密钥库路径
+          <input type="text" id="set-vault-path" class="input-box">
+        </label>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-save-settings">保存设置</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-link-variant"></use></svg> 查询平台链接（可配置）</h3>
+      <p class="hint">手机话费查询、AI 用量查询等跳转链接。初始化时自己查一次，填进这里，之后一键跳转。</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-new-query-link">+ 添加链接</button>
+      </div>
+      <table class="acc-table">
+        <thead><tr><th>类别</th><th>厂商</th><th>标签</th><th>链接</th><th>操作</th></tr></thead>
+        <tbody id="query-link-tbody"></tbody>
+      </table>
+      <div id="query-link-empty" class="empty-hint" hidden>还没有配置任何查询链接</div>
+    </div>
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-chart-bar"></use></svg> 用量接口配置</h3>
+      <p class="hint">为 AI 会员配置用量查询接口。服务端按 JSONPath 从响应里抽取 used/total，定时抓取写入缓存，仪表盘进度条自动刷新。</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-new-usage-config">+ 添加接口</button>
+        <button class="btn" id="btn-usage-refresh-all"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-sync"></use></svg> 立即全部抓取</button>
+      </div>
+      <table class="acc-table">
+        <thead><tr><th>账号</th><th>URL</th><th>间隔</th><th>最近</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="usage-config-tbody"></tbody>
+      </table>
+      <div id="usage-config-empty" class="empty-hint" hidden>还没有配置任何用量接口</div>
+    </div>
+    <div class="card">
+      <h3><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-backup-restore"></use></svg> 数据备份 / 导入</h3>
+      <p class="hint">数据文件保存在 <code>app/data/accounts.json</code>（随 Syncthing 同步）。
+      可手动导出完整 JSON 存档。</p>
+      <div class="btn-row">
+        <button class="btn" id="btn-export"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-download"></use></svg> 导出 JSON</button>
+        <button class="btn" id="btn-import"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-file-import"></use></svg> 导入 JSON</button>
+        <button class="btn btn-danger" id="btn-reset"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-delete"></use></svg> 清空全部数据</button>
+      </div>
+      <input type="file" id="import-file" accept=".json" hidden>
+      <div id="import-result" class="result-box" hidden></div>
+    </div>
+  </section>
+</main>
+
+<!-- 账号详情抽屉 -->
+<div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+<aside class="drawer" id="drawer" hidden>
+  <div class="drawer-head">
+    <div>
+      <h2 id="drawer-title"></h2>
+      <div class="drawer-sub" id="drawer-sub"></div>
+    </div>
+    <button class="icon-btn" id="drawer-close"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-close"></use></svg></button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<!-- 账号新增/编辑弹窗 -->
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modal-title">新增账号</h3>
+      <button class="icon-btn" id="modal-close"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-close"></use></svg></button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn" id="modal-cancel">取消</button>
+      <button class="btn btn-primary" id="modal-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 查询链接弹窗 -->
+<div class="modal-backdrop" id="ql-modal-backdrop" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="ql-modal-title">查询链接</h3>
+      <button class="icon-btn" id="ql-modal-close"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-close"></use></svg></button>
+    </div>
+    <div class="modal-body" id="ql-modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn" id="ql-modal-cancel">取消</button>
+      <button class="btn btn-primary" id="ql-modal-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 用量接口配置弹窗 -->
+<div class="modal-backdrop" id="uc-modal-backdrop" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="uc-modal-title">用量接口配置</h3>
+      <button class="icon-btn" id="uc-modal-close"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-close"></use></svg></button>
+    </div>
+    <div class="modal-body" id="uc-modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn" id="uc-modal-cancel">取消</button>
+      <button class="btn" id="uc-modal-test"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-flash"></use></svg> 测试</button>
+      <button class="btn btn-primary" id="uc-modal-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
