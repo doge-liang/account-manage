@@ -48,6 +48,8 @@ body {
 .icon-btn .ic { width: 15px; height: 15px; }
 .btn .ic { vertical-align: -0.2em; }
 .chip .ic, .badge .ic { vertical-align: -0.15em; }
+/* 厂商品牌 logo：稍大一点，与文字间距收紧 */
+.vic { width: 1.15em; height: 1.15em; vertical-align: -0.22em; margin-right: 2px; }
 .tabs { display: flex; gap: 4px; flex: 1; }
 .tab {
   border: none; background: transparent; cursor: pointer;

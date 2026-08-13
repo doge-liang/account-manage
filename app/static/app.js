@@ -69,6 +69,34 @@ const CATEGORY_KEYS = Object.keys(CATEGORIES);
 /* 图标渲染：icons.svg 符号引用（离线可用，无 emoji） */
 const IC = (name) => `<svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-${name}"></use></svg>`;
 
+/* AI 厂商品牌 logo 映射（vendor 值 → brand symbol 名）。
+   vendor 文本大小写不敏感匹配；未命中的 vendor 不显示 logo。 */
+const VENDOR_ICONS = {
+  openai: "openai",
+  anthropic: "anthropic",
+  google: "google",
+  xai: "xai",
+  minimax: "minimax",
+  moonshot: "moonshot",
+  zhipu: "zhipu",
+  deepseek: "deepseek",
+  "阿里云": "aliyun",
+};
+/* 返回厂商品牌 logo SVG（无匹配时返回空串）。 */
+const vendorIcon = (vendor) => {
+  if (!vendor) return "";
+  const k = String(vendor).trim().toLowerCase();
+  const brand = VENDOR_ICONS[k];
+  return brand ? `<svg class="ic vic" aria-hidden="true"><use href="icons.svg#brand-${brand}"></use></svg>` : "";
+};
+/* 厂商单元格：有 logo 则 [logo] 文字，否则纯文字（或 —）。 */
+const vendorCell = (vendor) => {
+  const v = vendor || "";
+  const ic = vendorIcon(v);
+  const txt = v || "—";
+  return ic ? `${ic} ${esc(txt)}` : esc(txt);
+};
+
 const RELATION_TYPES = ["登录邮箱", "注册邮箱", "备用邮箱", "绑定手机", "同一主体", "支付方式", "其他"];
 
 const STATUS_LABEL = { active: "active", inactive: "inactive", expired: "expired" };
@@ -263,7 +291,7 @@ function renderDashboard() {
     byVendor[v].n += 1;
   }
   const rows = Object.entries(byVendor).map(([v, d]) => `
-    <tr><td>${esc(v)}</td><td>${d.n} 个</td><td>$${d.usd}</td><td>¥${d.cny}</td></tr>`).join("");
+    <tr><td>${vendorIcon(v)}${esc(v)}</td><td>${d.n} 个</td><td>$${d.usd}</td><td>¥${d.cny}</td></tr>`).join("");
   $("#dash-vendor-cost").innerHTML = `
     <table class="acc-table"><thead><tr><th>厂商</th><th>账号数</th><th>月费 USD</th><th>月费 CNY</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="4" class="empty-hint">暂无 AI 会员</td></tr>'}</tbody></table>`;
@@ -293,7 +321,7 @@ function parseManualUsage(acc) {
 }
 
 function renderDashboardUsage() {
-  const ai = (state.data.accounts || []).filter((a) => a.category === "ai_member" && a.status !== "expired");
+  const ai = (state.data.accounts || []).filter((a) => (a.category === "ai_member" || a.category === "api") && a.status !== "expired");
   if (!ai.length) {
     $("#dash-usage").innerHTML = '<div class="empty-hint">暂无 AI 会员账号</div>';
     return;
@@ -315,23 +343,32 @@ function renderDashboardUsage() {
     const used = data.used;
     const total = data.total;
     const unit = (live && live.unit) || (acc.fields && acc.fields.quota_type === "quota" ? "" : "");
-    let pctText = "—", fillCls = "", widthPct = 0;
+    const sem = data.percent_semantics === "remaining" ? "剩余" : "已用";
+    // 拼接摘要：能显示什么就显示什么
+    const parts = [];
+    if (pct !== null) parts.push(`${sem} ${pct}%`);
+    if (used !== null && total !== null) parts.push(`${fmtNum(used)} / ${fmtNum(total)}${unit ? " " + esc(unit) : ""}`);
+    else if (total !== null) parts.push(`余额 ${fmtNum(total)}${unit ? " " + esc(unit) : ""}`);
+    if (data.is_available === true) parts.push("可用");
+    else if (data.is_available === false) parts.push("余额不足");
+    if (data.granted_balance && data.granted_balance !== "0.00" && data.granted_balance !== "0") parts.push(`赠送 ${esc(data.granted_balance)}`);
+    if (data.topped_up_balance && data.topped_up_balance !== "0.00" && data.topped_up_balance !== "0") parts.push(`充值 ${esc(data.topped_up_balance)}`);
+    if (data.prepaid_balance) parts.push(`预付 ${esc(data.prepaid_balance)}`);
+    if (data.credits_balance) parts.push(`Credits ${esc(data.credits_balance)}`);
+    if (data.level) parts.push(`等级 ${esc(data.level)}`);
+    if (data.model_count) parts.push(`${data.model_count} 个模型`);
+    if (data.session_percent !== null && data.session_percent !== undefined) parts.push(`窗口 ${data.session_percent}%`);
+    const summary = parts.join(" · ") || "—";
+    // 进度条 / 角标
+    let pctText = "—", fillCls = "", widthPct = 0, hasBar = false;
     if (pct !== null) {
       pctText = `${pct}%`;
       widthPct = Math.max(0, Math.min(100, pct));
       if (pct >= 90) fillCls = "danger";
       else if (pct >= 70) fillCls = "warn";
-    }
-    const usedText = (used !== null && used !== undefined) ? fmtNum(used) : "—";
-    const totalText = (total !== null && total !== undefined) ? fmtNum(total) : "—";
-    const sem = data.percent_semantics === "remaining" ? "剩余" : "已用";
-    let barText;
-    if (used !== null && total !== null) {
-      barText = `${usedText} / ${totalText}${unit ? " " + esc(unit) : ""}`;
-    } else if (pct !== null) {
-      barText = `${sem} ${pct}%`;
-    } else {
-      barText = "未配置";
+      hasBar = true;
+    } else if (total !== null && used !== null) {
+      hasBar = true;
     }
     const sourceLabel = live
       ? (live.fetched_at ? `自动 · ${fmtTimeAgo(live.fetched_at)}` : "自动")
@@ -339,12 +376,12 @@ function renderDashboardUsage() {
     return `
       <div class="usage-item">
         <div class="ui-head">
-          <div class="ui-name">${IC("robot")}<span title="${esc(acc.name)}">${esc(acc.name)}</span></div>
+          <div class="ui-name">${vendorIcon(acc.vendor) || IC("robot")}<span title="${esc(acc.name)}">${esc(acc.name)}</span></div>
           <span class="ui-pct ${fillCls ? "badge-warn" : ""}" style="${fillCls === 'danger' ? 'background:var(--danger-soft);color:var(--danger)' : fillCls === 'warn' ? 'background:var(--warn-soft);color:var(--warn)' : 'background:var(--primary-soft);color:var(--primary)'}">${esc(pctText)}</span>
         </div>
-        <div class="usage-bar"><div class="ub-fill ${fillCls}" style="width:${widthPct}%"></div></div>
+        ${hasBar ? `<div class="usage-bar"><div class="ub-fill ${fillCls}" style="width:${widthPct}%"></div></div>` : ""}
         <div class="ui-meta">
-          <span>${esc(barText)}</span>
+          <span>${esc(summary)}</span>
           <span>${esc(sourceLabel)}</span>
         </div>
       </div>`;
@@ -409,7 +446,7 @@ function renderAccounts() {
     return `
     <tr data-id="${esc(a.id)}">
       <td><b>${esc(a.name)}</b>${a.username ? `<div class="li-sub" style="font-size:12px;color:var(--text-2)">${esc(a.username)}</div>` : ""}</td>
-      <td>${esc(a.vendor || "—")}</td>
+      <td>${vendorCell(a.vendor)}</td>
       <td><span class="badge badge-cat">${IC(catInfo(a.category).icon)} ${catInfo(a.category).label}</span></td>
       <td style="font-size:13px">${keyInfo}</td>
       <td><span class="badge ${esc(a.status)}">${STATUS_LABEL[a.status] || esc(a.status)}</span></td>
@@ -450,7 +487,7 @@ function openDrawer(id) {
   if (!a) return;
   const f = a.fields || {};
   $("#drawer-title").innerHTML = `${IC(catInfo(a.category).icon)} ${esc(a.name)}`;
-  $("#drawer-sub").innerHTML = `${catInfo(a.category).label} · ${esc(a.vendor || "未知厂商")} · <span class="badge ${esc(a.status)}">${STATUS_LABEL[a.status] || esc(a.status)}</span>`;
+  $("#drawer-sub").innerHTML = `${catInfo(a.category).label} · ${vendorIcon(a.vendor)}${esc(a.vendor || "未知厂商")} · <span class="badge ${esc(a.status)}">${STATUS_LABEL[a.status] || esc(a.status)}</span>`;
 
   // 字段表
   const allFields = [{ k: "username", l: "登录账号 / 号码", v: a.username },
@@ -741,26 +778,41 @@ function renderSettings() {
     const acc = findAccount(c.account_id);
     const name = acc ? acc.name : "(账号已删除)";
     const cache = c.cache;
-    let statusTxt = "—", statusCls = "";
+    // 用量列：能显示什么就显示什么
+    let usedHtml = '<span class="badge" style="background:#e5e7eb;color:var(--text-2)">无数据</span>';
     if (cache) {
       const pct = cache.percent_used;
+      const tags = [];
       if (pct !== null && pct !== undefined) {
-        statusTxt = `${pct}%`;
-        statusCls = pct >= 90 ? "badge expired" : pct >= 70 ? "badge badge-warn" : "badge active";
-      } else if (cache.used !== null && cache.used !== undefined) {
-        statusTxt = `used ${cache.used}`;
-        statusCls = "badge active";
+        const usedCls = pct >= 90 ? "badge expired" : pct >= 70 ? "badge badge-warn" : "badge active";
+        const remain = Math.max(0, 100 - pct);
+        const remainCls = remain <= 10 ? "badge expired" : remain <= 30 ? "badge badge-warn" : "badge active";
+        tags.push(`<span class="${usedCls}">已用 ${pct}%</span>`);
+        tags.push(`<span class="${remainCls}">剩余 ${remain}%</span>`);
       }
+      if (cache.used !== null && cache.used !== undefined && cache.total !== null && cache.total !== undefined) {
+        tags.push(`<span class="badge active">${cache.used} / ${cache.total}${cache.unit ? " " + esc(cache.unit) : ""}</span>`);
+      } else if (cache.total !== null && cache.total !== undefined) {
+        tags.push(`<span class="badge active">余额 ${cache.total}${cache.unit ? " " + esc(cache.unit) : ""}</span>`);
+      }
+      if (cache.prepaid_balance) tags.push(`<span class="badge active">预付 ${esc(cache.prepaid_balance)}</span>`);
+      if (cache.credits_balance) tags.push(`<span class="badge active">Credits ${esc(cache.credits_balance)}</span>`);
+      if (cache.is_available === true) tags.push('<span class="badge active">可用</span>');
+      else if (cache.is_available === false) tags.push('<span class="badge expired">余额不足</span>');
+      if (cache.level) tags.push(`<span class="badge badge-cat">${esc(cache.level)}</span>`);
+      if (cache.model_count) tags.push(`<span class="badge badge-cat">${cache.model_count} 模型</span>`);
+      if (cache.session_percent !== null && cache.session_percent !== undefined) tags.push(`<span class="badge badge-cat">窗口 ${cache.session_percent}%</span>`);
+      if (tags.length) usedHtml = tags.join(" ");
     }
     const urlShort = c.url.length > 50 ? c.url.slice(0, 50) + "…" : c.url;
     const provBadge = c.provider ? `<span class="badge badge-cat" style="font-size:10px">${esc((state.usageProviders.find(p=>p.key===c.provider)||{}).label || c.provider)}</span>` : "";
     return `
       <tr>
-        <td><b>${esc(name)}</b>${acc ? `<div class="li-sub" style="font-size:12px">${esc(acc.vendor || "")}</div>` : ""}</td>
+        <td><b>${esc(name)}</b>${acc ? `<div class="li-sub" style="font-size:12px">${vendorIcon(acc.vendor)}${esc(acc.vendor || "")}</div>` : ""}</td>
         <td>${provBadge || `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:12px">${esc(urlShort)}</a>`}<div class="li-sub" style="font-size:11px">${provBadge ? esc(c.url.slice(0,40))+'...' : esc(c.jsonpath_used || "—") + " / " + esc(c.jsonpath_total || "—")}</div></td>
         <td style="white-space:nowrap">${IC("timer-outline")} ${c.interval_min}m</td>
         <td style="font-size:12px">${esc(c.last_run_at ? fmtTimeAgo(c.last_run_at) : "—")}</td>
-        <td><span class="${statusCls}">${statusTxt}</span>${c.enabled ? "" : `<div class="li-sub" style="font-size:11px">已停用</div>`}</td>
+        <td>${usedHtml}${c.enabled ? "" : `<div class="li-sub" style="font-size:11px">已停用</div>`}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-sm" data-uc-fetch="${esc(c.id)}" title="立即抓取">${IC("sync")}</button>
           <button class="btn btn-sm" data-ucedit="${esc(c.id)}">编辑</button>
@@ -843,13 +895,14 @@ function openQueryLinkForm(id) {
 function closeQueryLinkForm() { $("#ql-modal-backdrop").hidden = true; }
 
 /* ==================== 用量接口配置 ==================== */
+let _pendingOauthTokens = null; // OAuth device code 登录成功后暂存
 function openUsageConfigForm(id, preselectProvider) {
   const editing = id ? (state.usageConfigs || []).find((c) => c.id === id) : null;
-  const allAiAccs = (state.data.accounts || []).filter((a) => a.category === "ai_member");
+  const allAiAccs = (state.data.accounts || []).filter((a) => a.category === "ai_member" || a.category === "api");
   const providers = state.usageProviders || [];
   const c = editing || {};
-  // 当前选中的 provider（编辑时用已有值，新建时用 preselectProvider，否则空）
-  let curProvider = c.provider || preselectProvider || "";
+  // 当前选中的 provider（编辑时用已有值，新建时用 preselectProvider，否则默认第一个内置 provider）
+  let curProvider = c.provider || preselectProvider || (editing ? "" : (providers[0] && providers[0].key) || "");
   let provInfo = providers.find((p) => p.key === curProvider);
 
   // 根据当前 provider 过滤可选账号
@@ -860,7 +913,7 @@ function openUsageConfigForm(id, preselectProvider) {
     return allAiAccs;
   }
 
-  const providerOpts = ['<option value="">自定义（手动填 URL + JSONPath）</option>']
+  const providerOpts = ['<option value="">自定义中转站（手动填 URL + JSONPath，不绑定官方账号）</option>']
     .concat(providers.map((p) => `<option value="${esc(p.key)}" ${curProvider === p.key ? "selected" : ""}>${esc(p.label)}</option>`))
     .join("");
 
@@ -913,6 +966,10 @@ function openUsageConfigForm(id, preselectProvider) {
           <option value="0" ${c.enabled === false ? "selected" : ""}>停用</option>
         </select>
       </label>
+      <div class="full" id="uc-oauth-section" style="display:none">
+        <div id="uc-oauth-status" class="jsonpath-help"></div>
+        <button type="button" class="btn btn-sm" id="uc-oauth-login">OAuth 登录</button>
+      </div>
       <div class="jsonpath-help full" id="uc-jp-help">
         <b>JSONPath 语法</b>：点号或方括号取值，从响应根开始。<br>
         示例：<code>$.data.usage.used</code> · <code>$['used']</code> · <code>$.items[0].percent</code><br>
@@ -938,6 +995,23 @@ function openUsageConfigForm(id, preselectProvider) {
     // API Key 字段：只有 requires_api_key 的 provider 才显示
     const keyLabel = $("#uc-api-key-label");
     if (keyLabel) keyLabel.style.display = needsKey ? "" : "none";
+    // OAuth 登录区域：grok_build 等 OAuth 类 provider 显示
+    const oauthProviders = ["grok_build", "chatgpt_codex", "claude_code"];
+    const isOAuth = isProv && oauthProviders.includes(sel);
+    const oauthSection = $("#uc-oauth-section");
+    if (oauthSection) oauthSection.style.display = isOAuth ? "" : "none";
+    if (isOAuth) {
+      const hasToken = !!(editing && editing.oauth_tokens && editing.oauth_tokens.access_token);
+      const statusEl = $("#uc-oauth-status");
+      if (statusEl) statusEl.innerHTML = hasToken
+        ? `${IC("check-circle")} 已登录（token 已保存）`
+        : `${IC("alert")} 未登录，请点击下方按钮通过浏览器授权`;
+    }
+    // Custom 模式下账号不绑定官方账号：标签改为可选，加「不绑定」选项
+    const accLabel = $("#uc-account-label");
+    if (accLabel) {
+      accLabel.innerHTML = isProv ? "账号 *" : "关联账号（可空，中转站模式无需绑定）";
+    }
     const descEl = $("#uc-provider-desc");
     if (descEl) {
       descEl.style.display = isProv ? "block" : "none";
@@ -953,8 +1027,11 @@ function openUsageConfigForm(id, preselectProvider) {
     if (accSelect) {
       const prevVal = accSelect.value;
       const filtered = accsForProvider(sel);
-      accSelect.innerHTML = filtered.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.vendor || "—")})</option>`).join("");
-      if (filtered.some((a) => a.id === prevVal)) accSelect.value = prevVal;
+      // Custom 模式加「不绑定」选项
+      const customOpt = isProv ? "" : '<option value="">不绑定账号</option>';
+      accSelect.innerHTML = customOpt + filtered.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.vendor || "—")})</option>`).join("");
+      if (filtered.some((a) => a.id === prevVal) || (!prevVal && isProv)) accSelect.value = prevVal;
+      else if (!isProv && !prevVal) accSelect.value = "";
     }
     // provider 模式下填默认值（如果用户没改过）
     if (isProv && info) {
@@ -965,6 +1042,65 @@ function openUsageConfigForm(id, preselectProvider) {
   };
   $("#uc-provider").onchange = toggleProviderFields;
   toggleProviderFields(); // 初始化
+
+  // OAuth Device Code 登录
+  _pendingOauthTokens = null; // 重置
+  const oauthLoginBtn = $("#uc-oauth-login");
+  if (oauthLoginBtn) {
+    oauthLoginBtn.onclick = async () => {
+      const provKey = $("#uc-provider").value;
+      const statusEl = $("#uc-oauth-status");
+      oauthLoginBtn.disabled = true;
+      statusEl.innerHTML = "正在发起授权…";
+      try {
+        // 1. 发起 device code
+        const startRes = await apiPost("/api/oauth/grok/device-code", {});
+        if (!startRes.ok) { statusEl.innerHTML = `${IC("close-circle")} ${esc(startRes.error)}`; return; }
+        const d = startRes.data;
+        const url = d.verification_uri_complete || d.verification_uri;
+        statusEl.innerHTML = `<b>请在浏览器中完成授权：</b><br>
+          1. 打开 <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a><br>
+          2. 登录你的 xAI 账号并确认授权<br>
+          <span class="li-sub">授权码: <code>${esc(d.user_code)}</code>（如需手动输入）</span>`;
+        window.open(url, "_blank");
+        // 2. 轮询
+        const interval = (d.interval || 5) * 1000;
+        const deadline = Date.now() + (d.expires_in || 1800) * 1000;
+        const poll = async () => {
+          if (Date.now() > deadline) {
+            statusEl.innerHTML = `${IC("close-circle")} 授权超时`;
+            oauthLoginBtn.disabled = false;
+            return;
+          }
+          try {
+            const r = await apiPost("/api/oauth/grok/poll", { device_code: d.device_code });
+            if (r.ok && r.status === "success") {
+              _pendingOauthTokens = {
+                access_token: r.tokens.access_token,
+                refresh_token: r.tokens.refresh_token,
+                oidc_client_id: "b1a00492-073a-47ea-816f-4c329264a828",
+              };
+              statusEl.innerHTML = `${IC("check-circle")} 授权成功！token 已获取，点击保存生效`;
+              oauthLoginBtn.disabled = false;
+            } else if (r.ok && r.status === "pending") {
+              statusEl.innerHTML = statusEl.innerHTML.replace(/授权超时|授权成功|授权失败/g, "") + "<br>等待授权完成…";
+              setTimeout(poll, interval);
+            } else {
+              statusEl.innerHTML = `${IC("close-circle")} 授权失败：${esc(r.error || "未知错误")}`;
+              oauthLoginBtn.disabled = false;
+            }
+          } catch (e) {
+            statusEl.innerHTML = `${IC("close-circle")} ${esc(e.message)}`;
+            oauthLoginBtn.disabled = false;
+          }
+        };
+        setTimeout(poll, interval);
+      } catch (e) {
+        statusEl.innerHTML = `${IC("close-circle")} ${esc(e.message)}`;
+        oauthLoginBtn.disabled = false;
+      }
+    };
+  }
 }
 
 function closeUsageConfigForm() { $("#uc-modal-backdrop").hidden = true; }
@@ -989,6 +1125,7 @@ function readUsageConfigForm() {
     jsonpath_total: $("#uc-jp-total").value.trim(),
     unit: $("#uc-unit").value.trim(),
     enabled: $("#uc-enabled").value === "1",
+    oauth_tokens: _pendingOauthTokens || undefined,
   };
 }
 
@@ -1015,6 +1152,13 @@ async function testUsageConfig() {
       const extra = [];
       if (plan_type) extra.push(`套餐 ${esc(plan_type)}`);
       if (credits_balance) extra.push(`Credits ${esc(credits_balance)}`);
+      if (r.result.total !== null && r.result.total !== undefined && percent_used === null) extra.push(`余额 ${esc(r.result.total)}${unit ? " " + esc(unit) : ""}`);
+      if (r.result.is_available === true) extra.push("可用");
+      else if (r.result.is_available === false) extra.push("余额不足");
+      if (r.result.granted_balance && r.result.granted_balance !== "0.00" && r.result.granted_balance !== "0") extra.push(`赠送 ${esc(r.result.granted_balance)}`);
+      if (r.result.model_count) extra.push(`${r.result.model_count} 个模型`);
+      if (r.result.level) extra.push(`等级 ${esc(r.result.level)}`);
+      if (r.result.prepaid_balance) extra.push(`预付 ${esc(r.result.prepaid_balance)}`);
       result.innerHTML = `${IC("check-circle")} 抓取成功（HTTP ${r.status}）· ${esc(pctLabel)}${extra.length ? " · " + extra.join(" · ") : ""}`;
     } else {
       result.className = "uc-result result-box err";

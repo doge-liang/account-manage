@@ -357,6 +357,16 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json()
             res = _usage_test(payload)
             return self._send_json(res)
+        if path == "/api/usage-configs/import-oauth":
+            payload = self._read_json()
+            provider = str(payload.get("provider") or "").strip()
+            res = _oauth_import_from_cli(provider)
+            return self._send_json(res)
+        if path == "/api/oauth/grok/device-code":
+            return self._send_json(_grok_device_code_start())
+        if path == "/api/oauth/grok/poll":
+            payload = self._read_json()
+            return self._send_json(_grok_device_code_poll(payload))
         if path == "/api/vault/upload":
             return self._vault_upload()
         if path == "/api/data/reset":
@@ -414,6 +424,9 @@ class Handler(BaseHTTPRequestHandler):
                 updated = self._validate_usage_config(payload, data)
                 updated["id"] = cfg_id
                 updated["last_run_at"] = data["usage_configs"][idx].get("last_run_at", "")
+                # 保留已有的 oauth_tokens（前端编辑时不一定回传）
+                if not updated.get("oauth_tokens"):
+                    updated["oauth_tokens"] = data["usage_configs"][idx].get("oauth_tokens", {})
                 data["usage_configs"][idx] = updated
                 save_data(data)
             return self._send_json({"ok": True, "config": updated})
@@ -582,6 +595,7 @@ class Handler(BaseHTTPRequestHandler):
             "account_id": account_id,
             "provider": provider,
             "api_key": api_key,
+            "oauth_tokens": payload.get("oauth_tokens") or {},
             "url": url,
             "method": method,
             "headers": headers,
@@ -879,6 +893,30 @@ USAGE_PROVIDERS = {
         "default_unit": "%",
         "default_interval_min": 30,
     },
+    "deepseek_balance": {
+        "label": "DeepSeek 余额 (API Key)",
+        "description": "通过 API Key 查询 DeepSeek 账户余额（api.deepseek.com/user/balance）",
+        "vendor_filter": "DeepSeek",
+        "requires_api_key": True,
+        "default_unit": "",
+        "default_interval_min": 60,
+    },
+    "gemini_models": {
+        "label": "Gemini Key 验证 (API Key)",
+        "description": "通过 API Key 调用 /v1beta/models 验证密钥有效性并列出可用模型（无用量配额 API）",
+        "vendor_filter": "Google",
+        "requires_api_key": True,
+        "default_unit": "",
+        "default_interval_min": 60,
+    },
+    "dashscope_balance": {
+        "label": "阿里百炼配额 (API Key)",
+        "description": "通过 API Key 调用 /api/v1/quotas 验证密钥有效性并返回模型配额（dashscope.aliyuncs.com）",
+        "vendor_filter": "阿里云",
+        "requires_api_key": True,
+        "default_unit": "",
+        "default_interval_min": 60,
+    },
 }
 
 # Provider → fetch function 映射
@@ -888,6 +926,59 @@ PROVIDER_FETCHERS = {}  # 延迟填充，函数定义后注册
 def _codex_auth_path() -> Path:
     """定位 ~/.codex/auth.json"""
     return Path(os.path.expanduser("~")) / ".codex" / "auth.json"
+
+
+# ---------------------------------------------------------------------------
+# OAuth token 获取：优先从 cfg["oauth_tokens"] 读取，fallback 到本地 CLI 文件
+# ---------------------------------------------------------------------------
+
+def _oauth_get_tokens(cfg: dict, local_path: Path, local_extractor):
+    """统一的 OAuth token 获取入口。
+    优先从 cfg["oauth_tokens"] 读取（支持多账号），没有则 fallback 到本地 CLI 文件。
+    local_extractor: function(file_data) -> dict(access_token, refresh_token, **extra)
+    返回 dict 或 None。
+    """
+    ot = cfg.get("oauth_tokens") or {}
+    if ot.get("access_token") or ot.get("refresh_token"):
+        return {
+            "access_token": ot.get("access_token", ""),
+            "refresh_token": ot.get("refresh_token", ""),
+            "source": "config",
+            "file_path": None,
+            "file_data": None,
+            "auth_data": ot,
+            "extra": {k: v for k, v in ot.items() if k not in ("access_token", "refresh_token")},
+        }
+    if not local_path.exists():
+        return None
+    try:
+        with open(local_path, "r", encoding="utf-8") as f:
+            file_data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    extracted = local_extractor(file_data)
+    if not extracted or (not extracted.get("access_token") and not extracted.get("refresh_token")):
+        return None
+    return {
+        "access_token": extracted.get("access_token", ""),
+        "refresh_token": extracted.get("refresh_token", ""),
+        "source": "file",
+        "file_path": local_path,
+        "file_data": file_data,
+        "auth_data": extracted,
+        "extra": {k: v for k, v in extracted.items() if k not in ("access_token", "refresh_token")},
+    }
+
+
+def _oauth_save_tokens_to_cfg(cfg_id: str, tokens: dict):
+    """将刷新后的 token 回写到 usage_config 的 oauth_tokens 字段。"""
+    with _lock:
+        data = load_data()
+        idx = next((i for i, c in enumerate(data["usage_configs"]) if c["id"] == cfg_id), None)
+        if idx is None:
+            return
+        data["usage_configs"][idx]["oauth_tokens"] = tokens
+        save_data(data)
 
 
 def _codex_refresh_and_fetch(cfg: dict) -> dict:
@@ -1203,26 +1294,31 @@ def _grok_auth_path() -> Path:
 
 
 def _grok_refresh_and_fetch(cfg: dict) -> dict:
-    """读取 ~/.grok/auth.json → 刷新 token → 查询用量。
-    Grok 的用量数据来自 /v1/chat/completions 的 SSE 流中 response/usage 事件，
-    或通过 subscription status。这里用 /v1/chat/completions 做最小探测。"""
-    auth_path = _grok_auth_path()
-    if not auth_path.exists():
-        return {"ok": False, "error": f"未找到 {auth_path}（请先用 Grok CLI 登录）", "status": 0, "raw": ""}
-    try:
-        with open(auth_path, "r", encoding="utf-8") as f:
-            auth_raw = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        return {"ok": False, "error": f"读取 auth.json 失败: {e}", "status": 0, "raw": ""}
+    """读取 token（优先 config，fallback ~/.grok/auth.json）→ 刷新 → 查询用量。"""
+    def _grok_extractor(file_data):
+        issuer_key = list(file_data.keys())[0] if file_data else None
+        if not issuer_key:
+            return {}
+        ad = file_data[issuer_key]
+        return {
+            "access_token": ad.get("key", ""),
+            "refresh_token": ad.get("refresh_token", ""),
+            "oidc_client_id": ad.get("oidc_client_id", ""),
+            "user_id": ad.get("user_id", ""),
+        }
 
-    # auth.json 结构: {"https://auth.x.ai::uuid": {key, refresh_token, oidc_issuer, oidc_client_id, ...}}
-    issuer_key = list(auth_raw.keys())[0]
-    auth_data = auth_raw[issuer_key]
-    access_token = auth_data.get("key", "")
-    refresh_token = auth_data.get("refresh_token", "")
+    tok_info = _oauth_get_tokens(cfg, _grok_auth_path(), _grok_extractor)
+    if not tok_info:
+        return {"ok": False, "error": f"未找到 OAuth token（请先从 CLI 导入或用 Grok CLI 登录）", "status": 0, "raw": ""}
+
+    access_token = tok_info["access_token"]
+    refresh_token = tok_info["refresh_token"]
+    auth_data = tok_info["auth_data"]
     oidc_client_id = auth_data.get("oidc_client_id", "")
-    if not access_token and not refresh_token:
-        return {"ok": False, "error": "auth.json 中未找到 token", "status": 0, "raw": ""}
+    user_id = auth_data.get("user_id", "")
+    source = tok_info["source"]
+    file_path = tok_info["file_path"]
+    file_data = tok_info["file_data"]
 
     # 检查 token 过期
     import time as _time
@@ -1254,16 +1350,27 @@ def _grok_refresh_and_fetch(cfg: dict) -> dict:
             refreshed = json.loads(resp.read().decode("utf-8"))
         access_token = refreshed["access_token"]
         new_refresh = refreshed.get("refresh_token", refresh_token)
-        # 回写
-        auth_data["key"] = access_token
-        auth_data["refresh_token"] = new_refresh
-        auth_data["expires_at"] = str(int((refreshed.get("expires_in", 21600) + _time.time())))
-        tmp = auth_path.with_suffix(".json.tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(auth_raw, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, auth_path)
+        expires_at = str(int((refreshed.get("expires_in", 21600) + _time.time())))
+        # 回写：config 模式写回 config，file 模式写回本地文件
+        if source == "config" and cfg.get("id"):
+            _oauth_save_tokens_to_cfg(cfg["id"], {
+                "access_token": access_token,
+                "refresh_token": new_refresh,
+                "expires_at": expires_at,
+                "oidc_client_id": oidc_client_id,
+                "user_id": user_id,
+            })
+        elif file_path and file_data:
+            issuer_key = list(file_data.keys())[0]
+            file_data[issuer_key]["key"] = access_token
+            file_data[issuer_key]["refresh_token"] = new_refresh
+            file_data[issuer_key]["expires_at"] = expires_at
+            tmp = file_path.with_suffix(".json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(file_data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, file_path)
 
     if token_expired and refresh_token:
         try:
@@ -1281,7 +1388,7 @@ def _grok_refresh_and_fetch(cfg: dict) -> dict:
             proc = _sp.run(
                 ["curl", "-s", "-w", "\n%{http_code}", url,
                  "-H", f"Authorization: Bearer {tok}",
-                 "-H", f"x-userid: {auth_data.get('user_id', '')}",
+                 "-H", f"x-userid: {user_id}",
                  "-H", "x-grok-client-mode: xai-grok-cli",
                  "-H", "Accept: application/json",
                  "--max-time", "15"],
@@ -1314,7 +1421,8 @@ def _grok_refresh_and_fetch(cfg: dict) -> dict:
     # billing 结构: {config: {creditUsagePercent, productUsage, prepaidBalance, billingPeriodStart, ...}}
     config = billing.get("config") or {}
     credit_pct = config.get("creditUsagePercent")
-    percent_used = round(float(credit_pct), 1) if credit_pct is not None else None
+    # creditUsagePercent 缺失 = 本周期还没产生用量 = 0%
+    percent_used = round(float(credit_pct), 1) if credit_pct is not None else 0.0
 
     # 产品级别用量
     products = []
@@ -1345,6 +1453,86 @@ def _grok_refresh_and_fetch(cfg: dict) -> dict:
             **extra,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Grok OAuth Device Code Flow（RFC 8628）— 支持多账号独立登录
+# ---------------------------------------------------------------------------
+_GROK_OAUTH_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
+_GROK_OAUTH_SCOPE = "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write"
+_GROK_DEVICE_CODE_URL = "https://auth.x.ai/oauth2/device/code"
+_GROK_TOKEN_URL = "https://auth.x.ai/oauth2/token"
+
+
+def _grok_device_code_start() -> dict:
+    """发起 device code 流程：POST /oauth2/device/code，返回 user_code + verification_uri。"""
+    from urllib.parse import urlencode as _ue
+    body = _ue({"client_id": _GROK_OAUTH_CLIENT_ID, "scope": _GROK_OAUTH_SCOPE}).encode("utf-8")
+    req = urllib.request.Request(
+        _GROK_DEVICE_CODE_URL, data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            obj = json.loads(resp.read().decode("utf-8"))
+        return {"ok": True, "data": {
+            "device_code": obj.get("device_code", ""),
+            "user_code": obj.get("user_code", ""),
+            "verification_uri": obj.get("verification_uri", ""),
+            "verification_uri_complete": obj.get("verification_uri_complete", ""),
+            "expires_in": obj.get("expires_in", 1800),
+            "interval": obj.get("interval", 5),
+        }}
+    except urllib.error.HTTPError as e:
+        txt = e.read().decode("utf-8", errors="replace")[:300]
+        return {"ok": False, "error": f"HTTP {e.code}: {txt}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _grok_device_code_poll(payload: dict) -> dict:
+    """轮询 token 端点，直到用户授权完成或超时。"""
+    device_code = str(payload.get("device_code") or "").strip()
+    if not device_code:
+        return {"ok": False, "error": "缺少 device_code"}
+    from urllib.parse import urlencode as _ue
+    body = _ue({
+        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        "client_id": _GROK_OAUTH_CLIENT_ID,
+        "device_code": device_code,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        _GROK_TOKEN_URL, data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            obj = json.loads(resp.read().decode("utf-8"))
+        if obj.get("access_token"):
+            return {"ok": True, "status": "success", "tokens": {
+                "access_token": obj["access_token"],
+                "refresh_token": obj.get("refresh_token", ""),
+                "expires_in": obj.get("expires_in", 3600),
+                "id_token": obj.get("id_token", ""),
+            }}
+        err_code = obj.get("error", "")
+        if err_code in ("authorization_pending", "slow_down"):
+            return {"ok": True, "status": "pending", "error": err_code}
+        return {"ok": False, "status": "error", "error": obj.get("error_description") or err_code}
+    except urllib.error.HTTPError as e:
+        try:
+            txt = e.read().decode("utf-8", errors="replace")
+            obj = json.loads(txt)
+            err_code = obj.get("error", "")
+            if err_code in ("authorization_pending", "slow_down"):
+                return {"ok": True, "status": "pending", "error": err_code}
+            return {"ok": False, "status": "error", "error": obj.get("error_description") or err_code}
+        except (json.JSONDecodeError, Exception):
+            return {"ok": False, "status": "error", "error": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"ok": False, "status": "error", "error": str(e)}
 
 
 # ---------------------------------------------------------------------------
@@ -1388,24 +1576,28 @@ def _glm_coding_fetch(cfg: dict) -> dict:
     # 智谱错误响应：HTTP 200 但 body 含 {code:401, success:false}
     if not obj.get("success", True) or (isinstance(obj.get("code"), int) and obj.get("code") != 200):
         return {"ok": False, "error": obj.get("msg") or "API 返回错误", "status": status, "raw": text[:500]}
-    # limits 数组，每项有 type / unit / percent / resetTime
+    # limits 数组，每项有 type / unit / percentage / nextResetTime
     # unit=3 → 5h token 窗口, unit=6 → 周配额
+    # 注：智谱 API 实际字段为 "percentage" 和 "nextResetTime"
     limits = (obj.get("data") or {}).get("limits") or []
+    level = (obj.get("data") or {}).get("level")
     weekly_pct = None
     session_pct = None
     reset_at = None
     for lim in limits:
         unit = lim.get("unit")
-        pct = _parse_numeric(lim.get("percent"))
+        pct = _parse_numeric(lim.get("percentage"))
         if unit == 6 and pct is not None:  # 周配额优先
             weekly_pct = pct
-            reset_at = lim.get("resetTime") or lim.get("reset_time")
+            reset_at = lim.get("nextResetTime") or lim.get("resetTime") or lim.get("reset_time")
         elif unit == 3 and pct is not None:  # 5h 窗口
             session_pct = pct
             if not reset_at:
-                reset_at = lim.get("resetTime") or lim.get("reset_time")
+                reset_at = lim.get("nextResetTime") or lim.get("resetTime") or lim.get("reset_time")
     percent_used = weekly_pct if weekly_pct is not None else session_pct
     extra = {}
+    if level:
+        extra["level"] = str(level)
     if session_pct is not None:
         extra["session_percent"] = session_pct
     if reset_at:
@@ -1423,7 +1615,10 @@ def _glm_coding_fetch(cfg: dict) -> dict:
 
 def _kimi_coding_fetch(cfg: dict) -> dict:
     """Kimi for Coding: GET api.kimi.com/coding/v1/usages
-    认证：Bearer {key}。返回周配额 used/limit/remaining/resetTime。"""
+    认证：Bearer {key}。返回结构：
+      - limits[]: 数组，每项含 detail.{limit, remaining, resetTime}（5h 滑动窗口）
+      - usage: {limit, remaining, resetTime}（周配额）
+    """
     api_key = cfg.get("api_key", "")
     if not api_key:
         return {"ok": False, "error": "缺少 API Key", "status": 0, "raw": ""}
@@ -1435,34 +1630,66 @@ def _kimi_coding_fetch(cfg: dict) -> dict:
         obj = json.loads(text)
     except json.JSONDecodeError:
         return {"ok": False, "error": "响应不是合法 JSON", "status": status, "raw": text[:500]}
-    # 结构可能是 {data: {limit, used, remaining, resetTime}} 或直接平铺
-    data = obj.get("data") if isinstance(obj.get("data"), dict) else obj
-    used = _parse_numeric(data.get("used"))
-    limit = _parse_numeric(data.get("limit"))
-    remaining = _parse_numeric(data.get("remaining"))
-    reset_at = data.get("resetTime") or data.get("reset_time")
-    percent_used = None
-    if limit and limit > 0 and used is not None:
-        percent_used = round(used / limit * 100, 1)
-    elif remaining is not None and limit and limit > 0:
-        percent_used = round((1 - remaining / limit) * 100, 1)
+
+    percent_used = None   # 周配额已用百分比（优先展示）
+    session_pct = None    # 5h 窗口已用百分比
+    reset_at = None
+    used_val = None
+    total_val = None
+
+    # 5h 窗口：limits[].detail.{limit, remaining, resetTime}
+    limits = obj.get("limits") if isinstance(obj.get("limits"), list) else []
+    for item in limits:
+        detail = item.get("detail") if isinstance(item, dict) else None
+        if not isinstance(detail, dict):
+            continue
+        lim = _parse_numeric(detail.get("limit"))
+        rem = _parse_numeric(detail.get("remaining"))
+        if lim is not None and lim > 0 and rem is not None:
+            session_pct = round((1 - rem / lim) * 100, 1)
+            if not reset_at:
+                reset_at = detail.get("resetTime") or detail.get("reset_time")
+            break  # 取第一个有效窗口
+
+    # 周配额：usage.{limit, remaining, resetTime}
+    usage = obj.get("usage") if isinstance(obj.get("usage"), dict) else {}
+    if usage:
+        wlim = _parse_numeric(usage.get("limit"))
+        wrem = _parse_numeric(usage.get("remaining"))
+        if wlim is not None and wlim > 0 and wrem is not None:
+            percent_used = round((1 - wrem / wlim) * 100, 1)
+            used_val = round(wlim - wrem, 1)
+            total_val = wlim
+            reset_at = usage.get("resetTime") or usage.get("reset_time") or reset_at
+
+    # 降级：无周配额则用 5h 窗口
+    if percent_used is None:
+        percent_used = session_pct
+
     extra = {}
+    if session_pct is not None:
+        extra["session_percent"] = session_pct
     if reset_at:
         extra["reset_at"] = str(reset_at)
     return {
         "ok": True, "status": status,
         "result": {
-            "used": used, "total": limit,
+            "used": used_val, "total": total_val,
             "percent_used": percent_used, "percent_semantics": "used",
             "unit": cfg.get("unit") or "%", "fetched_at": _now(),
-            "raw_used": used, "raw_total": limit, **extra,
+            "raw_used": used_val, "raw_total": total_val, **extra,
         },
     }
 
 
 def _minimax_coding_fetch(cfg: dict) -> dict:
     """MiniMax Coding Plan: GET api.minimaxi.com/v1/api/openplatform/coding_plan/remains
-    认证：Bearer {key}。返回 5h + 周窗口的「剩余百分比」，需反转为已用百分比。"""
+    认证：Bearer {key}（Coding Plan 专用订阅 key，非普通按量 key）。
+    返回 model_remains[]，取 model_name=="general" 条目：
+      - current_interval_remaining_percent: 5h 窗口剩余百分比
+      - current_weekly_remaining_percent / current_weekly_status: 周配额（status==1 才激活）
+    接口给的是「剩余百分比」，需反转为「已用百分比」。
+    """
     api_key = cfg.get("api_key", "")
     if not api_key:
         return {"ok": False, "error": "缺少 API Key", "status": 0, "raw": ""}
@@ -1477,20 +1704,37 @@ def _minimax_coding_fetch(cfg: dict) -> dict:
     # MiniMax 错误响应：HTTP 200 但 body 含 {base_resp: {status_code:1004, ...}}
     base_resp = obj.get("base_resp") if isinstance(obj, dict) else None
     if base_resp and isinstance(base_resp.get("status_code"), int) and base_resp.get("status_code") != 0:
-        return {"ok": False, "error": base_resp.get("status_msg") or "API 返回错误", "status": status, "raw": text[:500]}
-    # MiniMax 返回「剩余百分比」，需要反转为「已用百分比」
-    data = obj.get("data") if isinstance(obj.get("data"), dict) else obj
-    weekly_remain = _parse_numeric(data.get("weeklyRemainPercent") or data.get("weekly_remain_percent"))
-    session_remain = _parse_numeric(data.get("fiveHourRemainPercent") or data.get("five_hour_remain_percent") or data.get("dailyRemainPercent"))
-    reset_at = data.get("weeklyResetTimestamp") or data.get("weekly_reset_timestamp")
+        msg = base_resp.get("status_msg") or "API 返回错误"
+        if base_resp.get("status_code") == 1004:
+            msg = "认证失败/cookie 缺失（1004）：请确认使用的是 Coding Plan 专用订阅 key（非普通 API key）"
+        return {"ok": False, "error": msg, "status": status, "raw": text[:500]}
+    # 找到 model_name == "general" 的条目（跳过 video 等非编程模型）
+    model_remains = obj.get("model_remains") if isinstance(obj.get("model_remains"), list) else []
+    general = next((m for m in model_remains
+                    if isinstance(m, dict) and m.get("model_name") == "general"), None)
     percent_used = None
     session_pct = None
-    if weekly_remain is not None:
-        percent_used = round(100 - weekly_remain, 1)
-    if session_remain is not None:
-        session_pct = round(100 - session_remain, 1)
-        if percent_used is None:
-            percent_used = session_pct
+    reset_at = None
+    if general:
+        # 5h 窗口
+        remain5 = _parse_numeric(
+            general.get("current_interval_remaining_percent")
+            or general.get("currentIntervalRemainingPercent"))
+        if remain5 is not None:
+            session_pct = round(100 - remain5, 1)
+            reset_at = general.get("end_time") or general.get("endTime")
+        # 周配额（仅 status==1 时激活；status==3 表示该套餐无周限额，跳过）
+        weekly_status = general.get("current_weekly_status") or general.get("currentWeeklyStatus")
+        if weekly_status == 1:
+            remain_w = _parse_numeric(
+                general.get("current_weekly_remaining_percent")
+                or general.get("currentWeeklyRemainingPercent"))
+            if remain_w is not None:
+                percent_used = round(100 - remain_w, 1)
+                reset_at = general.get("weekly_end_time") or general.get("weeklyEndTime") or reset_at
+    # 降级：无周配额则用 5h 窗口
+    if percent_used is None:
+        percent_used = session_pct
     extra = {}
     if session_pct is not None:
         extra["session_percent"] = session_pct
@@ -1514,6 +1758,177 @@ PROVIDER_FETCHERS["grok_build"] = _grok_refresh_and_fetch
 PROVIDER_FETCHERS["glm_coding"] = _glm_coding_fetch
 PROVIDER_FETCHERS["kimi_coding"] = _kimi_coding_fetch
 PROVIDER_FETCHERS["minimax_coding"] = _minimax_coding_fetch
+
+
+def _deepseek_balance_fetch(cfg: dict) -> dict:
+    """DeepSeek: GET https://api.deepseek.com/user/balance
+    认证：Bearer {key}。返回 is_available + balance_infos[]（total_balance 为字符串）。
+    DeepSeek 是按量 API，没有用量配额百分比，只返回余额。
+    """
+    api_key = cfg.get("api_key", "")
+    if not api_key:
+        return {"ok": False, "error": "缺少 API Key", "status": 0, "raw": ""}
+    status, text, err = _apikey_http_get(
+        "https://api.deepseek.com/user/balance", api_key, auth_mode="bearer")
+    if err:
+        return {"ok": False, "error": err, "status": status, "raw": text[:500]}
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "响应不是合法 JSON", "status": status, "raw": text[:500]}
+    is_available = obj.get("is_available")
+    infos = obj.get("balance_infos") or []
+    # 取第一个有效条目
+    balance_str = ""
+    currency = ""
+    granted_str = ""
+    topped_up_str = ""
+    if infos and isinstance(infos[0], dict):
+        balance_str = infos[0].get("total_balance", "")
+        currency = infos[0].get("currency", "")
+        granted_str = infos[0].get("granted_balance", "")
+        topped_up_str = infos[0].get("topped_up_balance", "")
+    extra = {}
+    if is_available is not None:
+        extra["is_available"] = bool(is_available)
+    if granted_str:
+        extra["granted_balance"] = str(granted_str)
+    if topped_up_str:
+        extra["topped_up_balance"] = str(topped_up_str)
+    # 余额作为 used/total 展示（语义上 total=余额，used=None）
+    # 前端会显示 used / total，这里把余额放在 total
+    balance_val = _parse_numeric(balance_str)
+    return {
+        "ok": True, "status": status,
+        "result": {
+            "used": None, "total": balance_val,
+            "percent_used": None, "percent_semantics": "remaining",
+            "unit": currency or cfg.get("unit") or "",
+            "fetched_at": _now(),
+            "raw_used": None, "raw_total": balance_str,
+            **extra,
+        },
+    }
+
+
+def _gemini_models_fetch(cfg: dict) -> dict:
+    """Gemini: GET https://generativelanguage.googleapis.com/v1beta/models
+    认证：x-goog-api-key header。验证 key 有效性并列出可用模型。
+    Gemini 订阅没有公开的用量配额查询 API，只做 key 验证 + 模型列表。
+    """
+    api_key = cfg.get("api_key", "")
+    if not api_key:
+        return {"ok": False, "error": "缺少 API Key", "status": 0, "raw": ""}
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    req = urllib.request.Request(url, method="GET", headers={
+        "x-goog-api-key": api_key,
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            status = resp.status
+            text = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        txt = ""
+        try:
+            txt = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        # 解析 Google 错误格式
+        err_msg = f"HTTP {e.code}"
+        try:
+            err_obj = json.loads(txt)
+            if "error" in err_obj:
+                err_msg = err_obj["error"].get("message", err_msg)
+        except (json.JSONDecodeError, KeyError):
+            pass
+        return {"ok": False, "error": err_msg, "status": e.code, "raw": txt[:500]}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "status": 0, "raw": ""}
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "响应不是合法 JSON", "status": status, "raw": text[:500]}
+    models = obj.get("models") or []
+    model_names = []
+    for m in models:
+        name = m.get("name", "")
+        # name 格式 "models/gemini-3.5-flash"，只取模型名
+        if name.startswith("models/"):
+            name = name[len("models/"):]
+        if name:
+            model_names.append(name)
+    extra = {}
+    if model_names:
+        extra["model_count"] = len(model_names)
+        extra["models"] = ", ".join(model_names[:10]) + ("..." if len(model_names) > 10 else "")
+    return {
+        "ok": True, "status": status,
+        "result": {
+            "used": None, "total": None,
+            "percent_used": None, "percent_semantics": "remaining",
+            "unit": cfg.get("unit") or "",
+            "fetched_at": _now(),
+            "raw_used": None, "raw_total": None,
+            **extra,
+        },
+    }
+
+
+# 注册 provider fetchers（追加）
+PROVIDER_FETCHERS["deepseek_balance"] = _deepseek_balance_fetch
+PROVIDER_FETCHERS["gemini_models"] = _gemini_models_fetch
+
+
+def _dashscope_balance_fetch(cfg: dict) -> dict:
+    """阿里百炼 DashScope: GET https://dashscope.aliyuncs.com/api/v1/quotas
+    认证：Bearer {key}。返回模型配额列表（RPM/TPM 限制）。
+    DashScope API key 无法查询账户余额（余额查询需阿里云 BSS OpenAPI + AccessKey），
+    这里用 /api/v1/quotas 验证 key 有效性并返回配额摘要。
+    """
+    api_key = cfg.get("api_key", "")
+    if not api_key:
+        return {"ok": False, "error": "缺少 API Key", "status": 0, "raw": ""}
+    status, text, err = _apikey_http_get(
+        "https://dashscope.aliyuncs.com/api/v1/quotas",
+        api_key, auth_mode="bearer")
+    if err:
+        return {"ok": False, "error": err, "status": status, "raw": text[:500]}
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "响应不是合法 JSON", "status": status, "raw": text[:500]}
+    # DashScope 错误响应：{code: "...", message: "...", success: false, request_id: "..."}
+    if obj.get("success") is False:
+        return {"ok": False, "error": obj.get("message") or "API 返回错误", "status": status, "raw": text[:500]}
+    output = obj.get("output") or {}
+    quotas = output.get("quotas") or []
+    # 提取有 usage_limit 的模型配额摘要
+    model_summary = []
+    for q in quotas:
+        model = q.get("model", "")
+        ml = q.get("model_limit") or {}
+        usage_limit = ml.get("usage_limit")
+        if model and usage_limit:
+            model_summary.append(f"{model}:{usage_limit}{ml.get('usage_limit_field','')}/{ml.get('usage_limit_period','')}d")
+    extra = {}
+    if model_summary:
+        extra["model_count"] = len(model_summary)
+        extra["models"] = ", ".join(model_summary[:8]) + ("..." if len(model_summary) > 8 else "")
+    return {
+        "ok": True, "status": status,
+        "result": {
+            "used": None, "total": None,
+            "percent_used": None, "percent_semantics": "remaining",
+            "unit": cfg.get("unit") or "",
+            "fetched_at": _now(),
+            "raw_used": None, "raw_total": None,
+            **extra,
+        },
+    }
+
+
+PROVIDER_FETCHERS["dashscope_balance"] = _dashscope_balance_fetch
 
 
 def _usage_test(payload: dict) -> dict:
