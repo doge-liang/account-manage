@@ -7,8 +7,10 @@ keepassxc/installer/
 *.key
 MASTER_PASSWORD.txt
 
-# 应用数据备份（accounts.json 本体可提交/同步）
+# 应用数据（含真实密钥，通过 Syncthing 同步，禁止提交）
+app/data/accounts.json
 app/data/backups/
+app/data/usage_cache.json*
 
 # 环境与密钥
 .env
