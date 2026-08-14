@@ -848,6 +848,8 @@ USAGE_PROVIDERS = {
         "default_jsonpath_total": "",
         "default_unit": "%",
         "default_interval_min": 30,
+        "base_url": "https://api.openai.com/v1",
+        "docs_url": "https://platform.openai.com/docs/api-reference",
     },
     "claude_code": {
         "label": "Claude Code (OAuth)",
@@ -858,6 +860,8 @@ USAGE_PROVIDERS = {
         "default_jsonpath_total": "",
         "default_unit": "%",
         "default_interval_min": 30,
+        "base_url": "https://api.anthropic.com",
+        "docs_url": "https://docs.anthropic.com/en/api/getting-started",
     },
     "grok_build": {
         "label": "Grok Build (OAuth)",
@@ -868,6 +872,8 @@ USAGE_PROVIDERS = {
         "default_jsonpath_total": "",
         "default_unit": "%",
         "default_interval_min": 30,
+        "base_url": "https://api.x.ai/v1",
+        "docs_url": "https://docs.x.ai/docs",
     },
     "glm_coding": {
         "label": "GLM Coding Plan (API Key)",
@@ -876,6 +882,8 @@ USAGE_PROVIDERS = {
         "requires_api_key": True,
         "default_unit": "%",
         "default_interval_min": 30,
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "docs_url": "https://open.bigmodel.cn/dev/api",
     },
     "kimi_coding": {
         "label": "Kimi for Coding (API Key)",
@@ -884,6 +892,8 @@ USAGE_PROVIDERS = {
         "requires_api_key": True,
         "default_unit": "%",
         "default_interval_min": 30,
+        "base_url": "https://api.moonshot.cn/v1",
+        "docs_url": "https://platform.moonshot.cn/docs",
     },
     "minimax_coding": {
         "label": "MiniMax Coding Plan (API Key)",
@@ -892,6 +902,8 @@ USAGE_PROVIDERS = {
         "requires_api_key": True,
         "default_unit": "%",
         "default_interval_min": 30,
+        "base_url": "https://api.minimaxi.com/v1",
+        "docs_url": "https://platform.minimaxi.com/document",
     },
     "deepseek_balance": {
         "label": "DeepSeek 余额 (API Key)",
@@ -900,6 +912,8 @@ USAGE_PROVIDERS = {
         "requires_api_key": True,
         "default_unit": "",
         "default_interval_min": 60,
+        "base_url": "https://api.deepseek.com/v1",
+        "docs_url": "https://api-docs.deepseek.com/",
     },
     "gemini_models": {
         "label": "Gemini Key 验证 (API Key)",
@@ -908,6 +922,8 @@ USAGE_PROVIDERS = {
         "requires_api_key": True,
         "default_unit": "",
         "default_interval_min": 60,
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "docs_url": "https://ai.google.dev/gemini-api/docs",
     },
     "dashscope_balance": {
         "label": "阿里百炼配额 (API Key)",
@@ -916,6 +932,8 @@ USAGE_PROVIDERS = {
         "requires_api_key": True,
         "default_unit": "",
         "default_interval_min": 60,
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "docs_url": "https://help.aliyun.com/zh/dashscope/",
     },
 }
 

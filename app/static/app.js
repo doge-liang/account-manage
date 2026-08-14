@@ -805,11 +805,23 @@ function renderSettings() {
       if (tags.length) usedHtml = tags.join(" ");
     }
     const urlShort = c.url.length > 50 ? c.url.slice(0, 50) + "…" : c.url;
-    const provBadge = c.provider ? `<span class="badge badge-cat" style="font-size:10px">${esc((state.usageProviders.find(p=>p.key===c.provider)||{}).label || c.provider)}</span>` : "";
+    const provInfo = c.provider ? (state.usageProviders.find(p=>p.key===c.provider)||{}) : {};
+    const provBadge = c.provider ? `<span class="badge badge-cat" style="font-size:10px">${esc(provInfo.label || c.provider)}</span>` : "";
+    // URL 列：provider 模式显示 baseURL（可复制）+ 文档链接；自定义模式显示接口 URL
+    let urlCell;
+    if (c.provider && provInfo.base_url) {
+      let sub = `<div class="li-sub" style="font-size:11px">`;
+      sub += `Base URL: <code>${esc(provInfo.base_url)}</code> <button class="btn btn-sm copy-btn" data-copy="${esc(provInfo.base_url)}" title="复制" style="padding:0 4px;font-size:11px">${IC("content-copy")}</button>`;
+      if (provInfo.docs_url) sub += ` · <a href="${esc(provInfo.docs_url)}" target="_blank" rel="noopener" style="font-size:11px">文档 ${IC("open-in-new")}</a>`;
+      sub += `</div>`;
+      urlCell = `${provBadge}${sub}`;
+    } else {
+      urlCell = `${provBadge || `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:12px">${esc(urlShort)}</a>`}<div class="li-sub" style="font-size:11px">${provBadge ? esc(c.url.slice(0,40))+'...' : esc(c.jsonpath_used || "—") + " / " + esc(c.jsonpath_total || "—")}</div>`;
+    }
     return `
       <tr>
         <td><b>${esc(name)}</b>${acc ? `<div class="li-sub" style="font-size:12px">${vendorIcon(acc.vendor)}${esc(acc.vendor || "")}</div>` : ""}</td>
-        <td>${provBadge || `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="font-size:12px">${esc(urlShort)}</a>`}<div class="li-sub" style="font-size:11px">${provBadge ? esc(c.url.slice(0,40))+'...' : esc(c.jsonpath_used || "—") + " / " + esc(c.jsonpath_total || "—")}</div></td>
+        <td>${urlCell}</td>
         <td style="white-space:nowrap">${IC("timer-outline")} ${c.interval_min}m</td>
         <td style="font-size:12px">${esc(c.last_run_at ? fmtTimeAgo(c.last_run_at) : "—")}</td>
         <td>${usedHtml}${c.enabled ? "" : `<div class="li-sub" style="font-size:11px">已停用</div>`}</td>
@@ -835,6 +847,17 @@ function renderSettings() {
       if (r.ok) { flash("已抓取"); await reload(); }
       else flash(`抓取失败：${r.error || "未知"}`);
     } catch (e) { flash(`抓取失败：${e.message}`); }
+  });
+  // 列表中的 Base URL 复制按钮
+  document.querySelectorAll("#usage-config-tbody .copy-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copy);
+        const orig = btn.innerHTML;
+        btn.innerHTML = IC("check");
+        setTimeout(() => { btn.innerHTML = orig; }, 1500);
+      } catch { /* 剪贴板不可用时静默 */ }
+    };
   });
 
   // 查询链接表
@@ -1019,6 +1042,15 @@ function openUsageConfigForm(id, preselectProvider) {
         let descHtml = esc(info.description);
         if (info.default_url) descHtml += `<br>自动端点: <code>${esc(info.default_url)}</code>`;
         if (info.default_jsonpath_used) descHtml += `<br>取值: <code>${esc(info.default_jsonpath_used)}</code>`;
+        // baseURL（可一键复制，方便粘贴到其他 Agent 工具）
+        if (info.base_url) {
+          descHtml += `<br>Base URL: <code>${esc(info.base_url)}</code> ` +
+            `<button type="button" class="btn btn-sm copy-btn" data-copy="${esc(info.base_url)}" title="复制">${IC("content-copy")}</button>`;
+        }
+        // 官方文档链接
+        if (info.docs_url) {
+          descHtml += ` · <a href="${esc(info.docs_url)}" target="_blank" rel="noopener">官方文档 ${IC("open-in-new")}</a>`;
+        }
         descEl.innerHTML = `<div class="jsonpath-help">${descHtml}</div>`;
       }
     }
@@ -1039,6 +1071,17 @@ function openUsageConfigForm(id, preselectProvider) {
       if ($("#uc-unit") && !$("#uc-unit").value) $("#uc-unit").value = info.default_unit;
       if ($("#uc-interval") && (!$("#uc-interval").value || $("#uc-interval").value == "60")) $("#uc-interval").value = info.default_interval_min;
     }
+    // Base URL 复制按钮（每次重建 descEl 后重新绑定）
+    document.querySelectorAll("#uc-modal-body .copy-btn").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copy);
+          const orig = btn.innerHTML;
+          btn.innerHTML = IC("check");
+          setTimeout(() => { btn.innerHTML = orig; }, 1500);
+        } catch { /* 剪贴板不可用时静默 */ }
+      };
+    });
   };
   $("#uc-provider").onchange = toggleProviderFields;
   toggleProviderFields(); // 初始化
