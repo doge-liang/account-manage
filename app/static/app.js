@@ -168,6 +168,7 @@ const TAURI_ROUTES = {
   "POST /api/usage-configs/test":      { cmd: "test_usage_config", body: "payload" },
   "POST /api/oauth/grok/device-code":  { cmd: "grok_device_code_start" },
   "POST /api/oauth/grok/poll":         { cmd: "grok_device_code_poll", body: "payload" },
+  "POST /api/import":                  { cmd: "import_data", body: "payload" },
   "POST /api/data/reset":      { cmd: "reset_data", body: "payload" },
   "PUT /api/settings":         { cmd: "save_settings", body: "payload" },
 };
