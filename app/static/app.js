@@ -150,7 +150,73 @@ function relCountdown(acc) {
 }
 
 /* ==================== API ==================== */
+/* 双通道适配层：Tauri 桌面版走 invoke，浏览器（Python 后端）走 fetch */
+const IS_TAURI = typeof window.__TAURI_INTERNALS__ !== "undefined";
+const INVOKE = IS_TAURI ? window.__TAURI_INTERNALS__.invoke : null;
+
+/* URL → Tauri command 映射（与 src-tauri/src/commands.rs 一一对应） */
+const TAURI_ROUTES = {
+  "GET /api/data":            { cmd: "get_data" },
+  "GET /api/usage":           { cmd: "get_usage" },
+  "GET /api/usage/providers": { cmd: "get_usage_providers" },
+  "GET /api/vault/info":      { cmd: "vault_info" },
+  "GET /api/vault/backups":   { cmd: "vault_backups" },
+  "POST /api/accounts":       { cmd: "upsert_account", body: "payload" },
+  "POST /api/relations":      { cmd: "upsert_relation", body: "payload" },
+  "POST /api/query-links":    { cmd: "upsert_query_link", body: "payload" },
+  "POST /api/usage-configs":  { cmd: "upsert_usage_config", body: "payload" },
+  "POST /api/usage-configs/test":      { cmd: "test_usage_config", body: "payload" },
+  "POST /api/oauth/grok/device-code":  { cmd: "grok_device_code_start" },
+  "POST /api/oauth/grok/poll":         { cmd: "grok_device_code_poll", body: "payload" },
+  "POST /api/data/reset":      { cmd: "reset_data", body: "payload" },
+  "PUT /api/settings":         { cmd: "save_settings", body: "payload" },
+};
+
+function tauriRoute(method, url) {
+  const clean = url.split("?")[0];
+  // 带 id 的 CRUD：/api/accounts/<id> → upsert_account(id, payload)
+  let m = clean.match(/^\/api\/(accounts|relations|query-links|usage-configs)\/([^/]+)$/);
+  if (m) {
+    const map = {
+      "accounts": ["upsert_account", "delete_account"],
+      "relations": ["upsert_relation", "delete_relation"],
+      "query-links": ["upsert_query_link", "delete_query_link"],
+      "usage-configs": ["upsert_usage_config", "delete_usage_config"],
+    };
+    const [upCmd, delCmd] = map[m[1]];
+    return method === "DELETE"
+      ? { cmd: delCmd, args: { id: m[2] } }
+      : { cmd: upCmd, args: { id: m[2], payload: "__BODY__" } };
+  }
+  // 用量抓取：/api/usage/fetch?id=xxx
+  m = clean.match(/^\/api\/usage\/fetch$/);
+  if (m) {
+    const id = new URLSearchParams(url.split("?")[1] || "").get("id") || "";
+    return { cmd: "fetch_usage", args: { id } };
+  }
+  const r = TAURI_ROUTES[`${method} ${clean}`];
+  if (!r) return null;
+  const args = {};
+  if (r.body) args[r.body] = "__BODY__";
+  return { cmd: r.cmd, args };
+}
+
 async function api(path, opts = {}) {
+  if (IS_TAURI) {
+    const method = (opts.method || "GET").toUpperCase();
+    let body = null;
+    if (opts.body) { try { body = JSON.parse(opts.body); } catch { body = opts.body; } }
+    const route = tauriRoute(method, path);
+    if (!route) throw new Error(`Tauri: 未映射的 API ${method} ${path}`);
+    const args = { ...route.args };
+    for (const k of Object.keys(args)) {
+      if (args[k] === "__BODY__") args[k] = body || {};
+    }
+    const res = await INVOKE(route.cmd, args);
+    // 后端错误约定：{error: "..."}（Python 版通过 HTTP status 抛错，Tauri 版带在 body 里）
+    if (res && typeof res === "object" && res.error) throw new Error(res.error);
+    return res;
+  }
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...opts,
@@ -164,6 +230,37 @@ const apiGet = (p) => api(p);
 const apiPost = (p, obj) => api(p, { method: "POST", body: JSON.stringify(obj) });
 const apiPut = (p, obj) => api(p, { method: "PUT", body: JSON.stringify(obj) });
 const apiDel = (p) => api(p, { method: "DELETE" });
+
+/* Tauri: 外链（target=_blank）默认被 WebView 拦截 → 委托系统浏览器打开 */
+if (IS_TAURI) {
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest('a[target="_blank"], a[href^="http"]');
+    if (a && a.href && a.href.startsWith("http")) {
+      e.preventDefault();
+      window.__TAURI_INTERNALS__.invoke("plugin:opener|open_url", { url: a.href })
+        .catch(() => { /* opener 失败时退回默认行为 */ });
+    }
+  });
+}
+
+/* 二进制下载辅助：Tauri 下 invoke 拿 bytes 转 Blob，浏览器直接走 URL */
+async function downloadBinary(url, fallbackName) {
+  if (IS_TAURI) {
+    const route = tauriRoute("GET", url) || {};
+    const data = await INVOKE(route.cmd || "vault_download", route.args || {});
+    if (data && data.error) throw new Error(data.error);
+    // Tauri Vec<u8> → number[]；Result<(bytes, name)> 结构在 invoke 层是数组
+    const [bytes, name] = Array.isArray(data) ? data : [data, fallbackName];
+    const blob = new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name || fallbackName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } else {
+    window.location = url;
+  }
+}
 
 async function reload() {
   const data = await apiGet("/api/data");
@@ -722,11 +819,30 @@ async function renderVault() {
           <div class="li-title">${esc(b.name)}</div>
           <div class="li-sub">${(b.size / 1024).toFixed(1)} KB · ${esc(b.mtime)}</div>
         </div>
-        <a class="btn btn-sm" href="/api/vault/backup/${encodeURIComponent(b.name)}">下载</a>
+        <a class="btn btn-sm" data-vault-backup-dl="${encodeURIComponent(b.name)}">下载</a>
       </div>`).join("")
     : '<div class="empty-hint">暂无备份。上传替换密钥库时，旧文件会自动备份到这里。</div>';
 
-  $("#btn-vault-download").onclick = () => { window.location = "/api/vault/download"; };
+  $("#btn-vault-download").onclick = () => { downloadBinary("/api/vault/download", "ai-keys.kdbx"); };
+  // 备份下载（Tauri 需走 invoke）
+  document.querySelectorAll("[data-vault-backup-dl]").forEach((el) => {
+    el.onclick = () => {
+      const name = decodeURIComponent(el.dataset.vaultBackupDl);
+      if (IS_TAURI) {
+        INVOKE("vault_restore", { name }).then((data) => {
+          const [bytes, fname] = Array.isArray(data) ? data : [data, name];
+          const blob = new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = fname || name;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        });
+      } else {
+        window.location = `/api/vault/backup/${encodeURIComponent(name)}`;
+      }
+    };
+  });
   $("#btn-vault-refresh").onclick = () => renderVault();
 }
 
@@ -740,13 +856,21 @@ function bindVaultUpload() {
     result.textContent = `正在上传 ${file.name}（${(file.size / 1024).toFixed(1)} KB）…`;
     try {
       const buf = await file.arrayBuffer();
-      const res = await fetch("/api/vault/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: buf,
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      let body;
+      if (IS_TAURI) {
+        // Tauri: base64 → invoke
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        body = await INVOKE("vault_upload", { contentB64: b64 });
+        if (body && body.error) throw new Error(body.error);
+      } else {
+        const res = await fetch("/api/vault/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: buf,
+        });
+        body = await res.json();
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      }
       result.className = "result-box ok";
       result.innerHTML = `${IC("check-circle")} 已替换密钥库<br>新文件 SHA-256：<code>${body.sha256}</code>`;
       await renderVault();
@@ -1271,7 +1395,20 @@ async function init() {
     await reload();
     flash(`抓取完成：成功 ${ok}，失败 ${fail}`);
   };
-  $("#btn-export").onclick = () => { window.location = "/api/export"; };
+  $("#btn-export").onclick = () => {
+    if (IS_TAURI) {
+      INVOKE("get_data").then((data) => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "accounts-backup.json";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      });
+    } else {
+      window.location = "/api/export";
+    }
+  };
   $("#btn-import").onclick = () => $("#import-file").click();
   $("#import-file").onchange = async () => {
     const file = $("#import-file").files[0];

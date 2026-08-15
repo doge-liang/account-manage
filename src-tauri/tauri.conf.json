@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AccountHub",
+  "version": "0.1.0",
+  "identifier": "com.doge.account-hub",
+  "build": {
+    "frontendDist": "../app/static"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "账号管家",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost https://api.openai.com https://api.anthropic.com https://api.x.ai https://open.bigmodel.cn https://api.moonshot.cn https://api.minimaxi.com https://api.deepseek.com https://generativelanguage.googleapis.com https://dashscope.aliyuncs.com https://chatgpt.com https://cli-chat-proxy.grok.com https://accounts.x.ai https://console.anthropic.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" }
+    }
+  }
+}
