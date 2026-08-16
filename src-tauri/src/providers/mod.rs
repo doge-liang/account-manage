@@ -136,6 +136,31 @@ fn now_iso() -> String {
     crate::store::now_iso()
 }
 
+/// reset_at 归一化：epoch 秒/毫秒字符串或数字 → ISO 8601；ISO 字符串原样通过。
+/// 各家 API 返回格式不一（Codex=epoch秒、GLM/Kimi=ISO、Grok=ISO），统一后前端才能算时间进度。
+pub fn normalize_reset_at(v: &Value) -> Option<String> {
+    let s = match v {
+        Value::String(s) => s.trim().to_string(),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    if s.is_empty() {
+        return None;
+    }
+    // 纯数字 → epoch（秒 10 位 / 毫秒 13 位）
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        let num: i64 = s.parse().ok()?;
+        let secs = if num > 1_000_000_000_000 { num / 1000 } else { num };
+        let dt = chrono::DateTime::from_timestamp(secs, 0)?;
+        return Some(dt.to_rfc3339());
+    }
+    // 已经是 ISO → 原样
+    if s.contains('T') || s.contains('-') {
+        return Some(s);
+    }
+    None
+}
+
 pub fn err_result(err: &str, status: u16, raw: &str) -> Value {
     json!({ "ok": false, "error": err, "status": status, "raw": raw.chars().take(500).collect::<String>() })
 }

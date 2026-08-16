@@ -476,13 +476,30 @@ pub async fn fetch_usage(id: String) -> Result<Value, ()> {
     };
     let res = crate::providers::do_fetch(&cfg, true).await;
     if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
-        // 写缓存 + 更新 last_run_at
+        // 写缓存 + 更新 last_run_at；成功时清掉历史失败标记
         let mut cache = crate::providers::cache::load_cache();
-        cache
-            .as_object_mut()
-            .unwrap()
-            .insert(id.clone(), res["result"].clone());
+        let entry = res["result"].clone();
+        if let Some(obj) = cache.as_object_mut().unwrap().get_mut(&id) {
+            if let Some(o) = obj.as_object_mut() {
+                o.remove("last_error");
+                o.remove("error_at");
+            }
+        }
+        cache.as_object_mut().unwrap().insert(id.clone(), entry);
         crate::providers::cache::save_cache(&cache);
+        let _g = STATE_LOCK.lock().unwrap();
+        let mut data = store::load_data_raw();
+        for c in data["usage_configs"].as_array_mut().unwrap() {
+            if c["id"] == json!(id) {
+                c["last_run_at"] = json!(store::now_iso());
+                break;
+            }
+        }
+        let _ = store::save_data_raw(&data);
+    } else {
+        // 失败：记录错误到缓存（保留旧数据），并更新 last_run_at 便于「最近」列反映尝试时间
+        let err = res.get("error").and_then(|v| v.as_str()).unwrap_or("未知错误");
+        crate::providers::cache::record_error(&id, err);
         let _g = STATE_LOCK.lock().unwrap();
         let mut data = store::load_data_raw();
         for c in data["usage_configs"].as_array_mut().unwrap() {

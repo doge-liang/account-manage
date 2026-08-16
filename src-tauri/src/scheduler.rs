@@ -65,22 +65,34 @@ async fn tick() -> Result<(), Box<dyn std::error::Error>> {
         }
         let res = providers::do_fetch(&c, true).await;
         if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+            // 成功：整条替换缓存（天然清掉历史 last_error）
             if let Some(obj) = cache.as_object_mut() {
                 obj.insert(cfg_id.clone(), res["result"].clone());
             }
             changed = true;
-            // 更新 last_run_at
-            let mut d2 = store::load_data_raw();
-            if let Some(configs) = d2.get_mut("usage_configs").and_then(|v| v.as_array_mut()) {
-                for cc in configs.iter_mut() {
-                    if cc["id"] == Value::String(cfg_id.clone()) {
-                        cc["last_run_at"] = Value::String(store::now_iso());
-                        break;
-                    }
+        } else {
+            // 失败：叠加 last_error/error_at（保留旧数据），同样到期重试由 fetched_at 不变保证
+            let err = res.get("error").and_then(|v| v.as_str()).unwrap_or("未知错误");
+            if let Some(obj) = cache.as_object_mut() {
+                let entry = obj.entry(cfg_id.clone()).or_insert_with(|| Value::Object(Default::default()));
+                if let Some(o) = entry.as_object_mut() {
+                    o.insert("last_error".into(), Value::String(err.chars().take(200).collect()));
+                    o.insert("error_at".into(), Value::String(store::now_iso()));
                 }
             }
-            let _ = store::save_data_raw(&d2);
+            changed = true;
         }
+        // 两种结果都更新 last_run_at（反映尝试时间）
+        let mut d2 = store::load_data_raw();
+        if let Some(configs) = d2.get_mut("usage_configs").and_then(|v| v.as_array_mut()) {
+            for cc in configs.iter_mut() {
+                if cc["id"] == Value::String(cfg_id.clone()) {
+                    cc["last_run_at"] = Value::String(store::now_iso());
+                    break;
+                }
+            }
+        }
+        let _ = store::save_data_raw(&d2);
     }
     if changed {
         providers::cache::save_cache(&cache);

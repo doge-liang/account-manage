@@ -471,17 +471,29 @@ function renderDashboardUsage() {
     const sourceLabel = live
       ? (live.fetched_at ? `自动 · ${fmtTimeAgo(live.fetched_at)}` : "自动")
       : "手动填写";
+    // 配速分析：用量 vs 时间进度 + 重置倒计时
+    const pace = paceInfo(data, acc);
+    const paceB = paceBadge(pace);
+    const paceLine = pace
+      ? `<div class="pace-line"><span class="pace-time">⏳ ${esc(pace.remainText)} · 时间 ${Math.round(pace.timePct)}%</span>${paceB ? " " + paceB : ""}</div>`
+      : "";
+    // 抓取失败提示（旧数据仍展示，但明确标注当前抓取在失败）
+    const failNote = data.last_error
+      ? `<div class="pace-line" title="${esc(data.last_error)}"><span class="badge expired" style="cursor:help">抓取失败 · 以下为 ${fmtTimeAgo(data.fetched_at)}前数据</span></div>`
+      : "";
     return `
-      <div class="usage-item">
+      <div class="usage-item${pace && pace.pace === "ahead" ? " pace-alert" : ""}">
         <div class="ui-head">
           <div class="ui-name">${vendorIcon(acc.vendor) || IC("robot")}<span title="${esc(acc.name)}">${esc(acc.name)}</span></div>
           <span class="ui-pct ${fillCls ? "badge-warn" : ""}" style="${fillCls === 'danger' ? 'background:var(--danger-soft);color:var(--danger)' : fillCls === 'warn' ? 'background:var(--warn-soft);color:var(--warn)' : 'background:var(--primary-soft);color:var(--primary)'}">${esc(pctText)}</span>
         </div>
-        ${hasBar ? `<div class="usage-bar"><div class="ub-fill ${fillCls}" style="width:${widthPct}%"></div></div>` : ""}
+        ${hasBar ? `<div class="usage-bar"><div class="ub-fill ${fillCls}" style="width:${widthPct}%"></div><div class="ub-pace-mark" style="left:${Math.min(100, Math.round(pace ? pace.timePct : 0))}%" title="时间进度 ${pace ? Math.round(pace.timePct) : '?'}%"></div></div>` : ""}
         <div class="ui-meta">
           <span>${esc(summary)}</span>
           <span>${esc(sourceLabel)}</span>
         </div>
+        ${paceLine}
+        ${failNote}
       </div>`;
   }).join("");
 }
@@ -502,6 +514,60 @@ function fmtTimeAgo(iso) {
   if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
   return `${Math.floor(diff / 86400)} 天前`;
+}
+
+/* ---- 配速分析：用量进度 vs 周期时间进度 ----
+   返回 null（无重置时间/无百分比）或：
+   { resetAt, remainText, timePct, usePct, pace, projEndPct }
+   pace: "ahead" 用量超前（会提前耗尽）| "behind" 用量落后（重置时浪费）| "on" 匀速 */
+function paceInfo(data, acc) {
+  // 重置时间：provider 的 reset_at / billing_period_end，或账号字段的 reset_date（手动）
+  let resetAt = data.reset_at || data.billing_period_end || null;
+  if (!resetAt && acc && acc.fields) {
+    const rd = acc.fields.reset_date || acc.fields.billing_date;
+    if (rd) resetAt = new Date(rd + "T23:59:59+08:00").toISOString();
+  }
+  if (!resetAt) return null;
+  const reset = new Date(resetAt);
+  if (isNaN(reset.getTime())) return null;
+  const usePct = data.percent_used;
+  if (usePct === null || usePct === undefined) return null;
+
+  // 周期起点：未知就用「7 天周期」近似（各家重置周期多为 5h/7d/月，
+  // 拿不到 start 时用 7d 估时间进度只作参考，显示约数）
+  const PERIOD_HINTS = { weekly: 7 * 86400e3, session: 5 * 3600e3 };
+  let periodMs = PERIOD_HINTS[data.window] || 7 * 86400e3;
+  const now = Date.now();
+  const remainMs = reset.getTime() - now;
+  if (remainMs <= 0) return null; // 已到重置点，等下一轮抓取
+  const elapsedMs = Math.max(0, periodMs - remainMs);
+  const timePct = Math.min(100, (elapsedMs / periodMs) * 100);
+
+  const projEndPct = timePct > 5 ? (usePct / timePct) * 100 : null; // 按当前速率到周期末的用量
+  let pace = "on";
+  if (timePct > 15) { // 周期早期不做判断
+    const diff = usePct - timePct;
+    if (diff > 15) pace = "ahead";      // 用量超前时间 ≥15pct → 会提前耗尽
+    else if (diff < -25) pace = "behind"; // 用量落后时间 ≥25pct → 重置时剩很多
+  }
+
+  const remainH = remainMs / 3600e3;
+  const remainText = remainH >= 48 ? `${Math.floor(remainH / 24)} 天后重置` : remainH >= 1 ? `${remainH.toFixed(remainH < 10 ? 1 : 0)} 小时后重置` : `${Math.max(1, Math.round(remainMs / 60e3))} 分钟后重置`;
+  return { resetAt, remainText, timePct, usePct, pace, projEndPct };
+}
+
+/* 配速徽标文案 */
+function paceBadge(p) {
+  if (!p) return "";
+  if (p.pace === "ahead") {
+    const over = Math.round(p.projEndPct);
+    return `<span class="pace-badge pace-ahead" title="按当前速率，本周期结束预计用量 ${over}%">⚠ 超速${over > 100 ? "·将耗尽" : ""}</span>`;
+  }
+  if (p.pace === "behind") {
+    const waste = Math.max(0, Math.round(100 - p.projEndPct));
+    return `<span class="pace-badge pace-behind" title="按当前速率，重置时将剩余约 ${waste}% 配额未用">💤 剩 ${waste}%</span>`;
+  }
+  return "";
 }
 
 /* ==================== 账号列表 ==================== */
@@ -903,8 +969,12 @@ function renderSettings() {
     const acc = findAccount(c.account_id);
     const name = acc ? acc.name : "(账号已删除)";
     const cache = c.cache;
+    // 抓取失败状态：保留旧数据标签，但先挂红标（hover 看错误详情 + 时间）
+    const failBadge = cache && cache.last_error
+      ? `<span class="badge expired" title="${esc(cache.last_error)}（${cache.error_at ? fmtTimeAgo(cache.error_at) : ""}）">抓取失败</span>`
+      : "";
     // 用量列：能显示什么就显示什么
-    let usedHtml = '<span class="badge" style="background:#e5e7eb;color:var(--text-2)">无数据</span>';
+    let usedHtml = failBadge || '<span class="badge" style="background:#e5e7eb;color:var(--text-2)">无数据</span>';
     if (cache) {
       const pct = cache.percent_used;
       const tags = [];
@@ -927,7 +997,8 @@ function renderSettings() {
       if (cache.level) tags.push(`<span class="badge badge-cat">${esc(cache.level)}</span>`);
       if (cache.model_count) tags.push(`<span class="badge badge-cat">${cache.model_count} 模型</span>`);
       if (cache.session_percent !== null && cache.session_percent !== undefined) tags.push(`<span class="badge badge-cat">窗口 ${cache.session_percent}%</span>`);
-      if (tags.length) usedHtml = tags.join(" ");
+      // 有数据但也有失败标记 → 红标放最前，旧数据照常显示（供参考最后成功值）
+      if (tags.length) usedHtml = (failBadge ? failBadge + " " : "") + tags.join(" ");
     }
     const urlShort = c.url.length > 50 ? c.url.slice(0, 50) + "…" : c.url;
     const provInfo = c.provider ? (state.usageProviders.find(p=>p.key===c.provider)||{}) : {};

@@ -50,7 +50,7 @@ pub async fn refresh_and_fetch(cfg: &Value) -> Value {
     };
 
     if token_expired && !refresh_token.is_empty() {
-        match refresh_claude(&refresh_token).await {
+        match refresh_via_cli(&path).await {
             Ok(t) => access_token = t,
             Err(e) => return json!({ "ok": false, "error": format!("token 刷新失败: {e}"), "status": 0, "raw": "" }),
         }
@@ -58,7 +58,8 @@ pub async fn refresh_and_fetch(cfg: &Value) -> Value {
 
     let mut resp = fetch_usage(access_token.clone()).await;
     if matches!(&resp, Ok(r) if r.status().as_u16() == 401) && !refresh_token.is_empty() {
-        match refresh_claude(&refresh_token).await {
+        // 401 → 先试 CLI 刷新（claude.ai/oauth/token 被 Cloudflare 拦截，直接 HTTP 刷新不可行）
+        match refresh_via_cli(&path).await {
             Ok(t) => {
                 access_token = t;
                 resp = fetch_usage(access_token.clone()).await;
@@ -121,29 +122,28 @@ pub async fn refresh_and_fetch(cfg: &Value) -> Value {
     json!({ "ok": true, "status": status, "result": result })
 }
 
-async fn refresh_claude(refresh_token: &str) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .post("https://claude.ai/oauth/token")
-        .header("Content-Type", "application/json")
-        .json(&json!({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": "https://claude.ai/oauth/claude-code-client-metadata",
-        }))
-        .send()
+/// 通过系统 claude CLI 刷新 token：
+/// claude.ai/oauth/token 端点有 Cloudflare 浏览器指纹校验，HTTP 客户端无法直接刷新。
+/// CLI 自带完整指纹能通过 —— 跑一次最小请求（-p hi）让它刷新并回写 credentials.json，
+/// 然后重读文件拿新 token。已装 Claude Code 的机器上这是最可靠的路径。
+async fn refresh_via_cli(cred_path: &std::path::Path) -> Result<String, String> {
+    let out = tokio::process::Command::new("claude")
+        .args(["-p", "hi", "--max-turns", "1"])
+        .output()
         .await
-        .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
+        .map_err(|e| format!("无法启动 claude CLI（{e}）。请安装 Claude Code 或手动运行一次 `claude` 登录"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("claude CLI 刷新失败: {}", stderr.chars().take(200).collect::<String>()));
     }
-    let refreshed: Value = resp.json().await.map_err(|e| e.to_string())?;
-    refreshed
-        .get("access_token")
+    // CLI 回写 credentials.json 后重读
+    let creds: Value = std::fs::read_to_string(cred_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .ok_or("重读 credentials.json 失败")?;
+    creds
+        .pointer("/claudeAiOauth/accessToken")
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| "响应缺少 access_token".to_string())
+        .ok_or_else(|| "credentials.json 中未找到新 accessToken".to_string())
 }

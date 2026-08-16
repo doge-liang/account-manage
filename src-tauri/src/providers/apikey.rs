@@ -110,7 +110,7 @@ pub async fn glm_fetch(cfg: &Value) -> Value {
     if let Some(sp) = session_pct {
         result["session_percent"] = json!(sp);
     }
-    if let Some(r) = reset_at {
+    if let Some(r) = reset_at.as_ref().and_then(|s| crate::providers::normalize_reset_at(&json!(s))) {
         result["reset_at"] = json!(r);
     }
     json!({ "ok": true, "status": status, "result": result })
@@ -187,7 +187,7 @@ pub async fn kimi_fetch(cfg: &Value) -> Value {
     if let Some(sp) = session_pct {
         result["session_percent"] = json!(sp);
     }
-    if let Some(r) = reset_at {
+    if let Some(r) = reset_at.as_ref().and_then(|s| crate::providers::normalize_reset_at(&json!(s))) {
         result["reset_at"] = json!(r);
     }
     json!({ "ok": true, "status": status, "result": result })
@@ -283,7 +283,7 @@ pub async fn minimax_fetch(cfg: &Value) -> Value {
     if let Some(sp) = session_pct {
         result["session_percent"] = json!(sp);
     }
-    if let Some(r) = reset_at {
+    if let Some(r) = reset_at.as_ref().and_then(|s| crate::providers::normalize_reset_at(&json!(s))) {
         result["reset_at"] = json!(r);
     }
     json!({ "ok": true, "status": status, "result": result })

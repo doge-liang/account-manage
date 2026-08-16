@@ -254,7 +254,7 @@ code { background: #f0f1f4; padding: 1px 5px; border-radius: 4px; font-size: 12p
   height: 10px;
   background: #eef0f3;
   border-radius: 999px;
-  overflow: hidden;
+  overflow: visible; /* 让时间刻度线能露出来 */
 }
 .usage-bar > .ub-fill {
   position: absolute; left: 0; top: 0; bottom: 0;
@@ -264,6 +264,29 @@ code { background: #f0f1f4; padding: 1px 5px; border-radius: 4px; font-size: 12p
 }
 .usage-bar > .ub-fill.warn { background: var(--warn); }
 .usage-bar > .ub-fill.danger { background: var(--danger); }
+/* 时间进度刻度线：竖线标记「现在时间走到哪了」，用量条超过它=超速 */
+.usage-bar > .ub-pace-mark {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--text-2);
+  opacity: .75;
+  border-radius: 1px;
+  z-index: 2;
+}
+/* 配速行：重置倒计时 + 预警徽标 */
+.pace-line {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 5px; font-size: 11px; color: var(--text-2);
+}
+.pace-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.pace-badge.pace-ahead { background: var(--danger-soft, #fde8e8); color: var(--danger, #d93025); }
+.pace-badge.pace-behind { background: #e8f0fe; color: #1a73e8; }
+.usage-item.pace-alert {
+  outline: 1px solid var(--danger, #d93025);
+  outline-offset: -1px;
+}
 .usage-item .ui-meta {
   display: flex; justify-content: space-between;
   font-size: 11px; color: var(--text-2); margin-top: 6px;

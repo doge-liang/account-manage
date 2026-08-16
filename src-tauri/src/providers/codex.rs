@@ -128,8 +128,8 @@ pub async fn refresh_and_fetch(cfg: &Value) -> Value {
     }
     if let Some(pw) = obj.pointer("/rate_limit/primary_window") {
         if let Some(r) = pw.get("reset_at") {
-            if !r.is_null() {
-                result["reset_at"] = json!(r.to_string());
+            if let Some(iso) = crate::providers::normalize_reset_at(r) {
+                result["reset_at"] = json!(iso);
             }
         }
     }
