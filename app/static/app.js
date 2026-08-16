@@ -477,18 +477,20 @@ function renderDashboardUsage() {
     const paceLine = pace
       ? `<div class="pace-line"><span class="pace-time">⏳ ${esc(pace.remainText)} · 时间 ${Math.round(pace.timePct)}%</span>${paceB ? " " + paceB : ""}</div>`
       : "";
-    // 抓取失败提示（旧数据仍展示，但明确标注当前抓取在失败）
-    const failNote = data.last_error
+    // 抓取失败提示（旧数据降级展示：灰显 + 数据年龄）
+    const isStale = !!data.last_error;
+    const staleAttr = isStale ? ' style="opacity:.5"' : "";
+    const failNote = isStale
       ? `<div class="pace-line" title="${esc(data.last_error)}"><span class="badge expired" style="cursor:help">抓取失败 · 以下为 ${fmtTimeAgo(data.fetched_at)}前数据</span></div>`
       : "";
     return `
       <div class="usage-item${pace && pace.pace === "ahead" ? " pace-alert" : ""}">
         <div class="ui-head">
           <div class="ui-name">${vendorIcon(acc.vendor) || IC("robot")}<span title="${esc(acc.name)}">${esc(acc.name)}</span></div>
-          <span class="ui-pct ${fillCls ? "badge-warn" : ""}" style="${fillCls === 'danger' ? 'background:var(--danger-soft);color:var(--danger)' : fillCls === 'warn' ? 'background:var(--warn-soft);color:var(--warn)' : 'background:var(--primary-soft);color:var(--primary)'}">${esc(pctText)}</span>
+          <span class="ui-pct${isStale ? " ui-pct-stale" : ""} ${fillCls ? "badge-warn" : ""}" style="${fillCls === 'danger' ? 'background:var(--danger-soft);color:var(--danger)' : fillCls === 'warn' ? 'background:var(--warn-soft);color:var(--warn)' : 'background:var(--primary-soft);color:var(--primary)'}">${esc(pctText)}</span>
         </div>
-        ${hasBar ? `<div class="usage-bar"><div class="ub-fill ${fillCls}" style="width:${widthPct}%"></div><div class="ub-pace-mark" style="left:${Math.min(100, Math.round(pace ? pace.timePct : 0))}%" title="时间进度 ${pace ? Math.round(pace.timePct) : '?'}%"></div></div>` : ""}
-        <div class="ui-meta">
+        ${hasBar ? `<div class="usage-bar"${isStale ? ' style="opacity:.45"' : ""}><div class="ub-fill ${fillCls}" style="width:${widthPct}%"></div><div class="ub-pace-mark" style="left:${Math.min(100, Math.round(pace ? pace.timePct : 0))}%" title="时间进度 ${pace ? Math.round(pace.timePct) : '?'}%"></div></div>` : ""}
+        <div class="ui-meta"${staleAttr}>
           <span>${esc(summary)}</span>
           <span>${esc(sourceLabel)}</span>
         </div>
@@ -969,34 +971,37 @@ function renderSettings() {
     const acc = findAccount(c.account_id);
     const name = acc ? acc.name : "(账号已删除)";
     const cache = c.cache;
-    // 抓取失败状态：保留旧数据标签，但先挂红标（hover 看错误详情 + 时间）
-    const failBadge = cache && cache.last_error
-      ? `<span class="badge expired" title="${esc(cache.last_error)}（${cache.error_at ? fmtTimeAgo(cache.error_at) : ""}）">抓取失败</span>`
+    // 抓取失败状态：数据是旧的 → 徽标明确写「旧值」，旧数据灰显 + 标注年龄
+    const isStale = !!(cache && cache.last_error);
+    const staleAge = isStale ? fmtTimeAgo(cache.fetched_at) : "";
+    const failBadge = isStale
+      ? `<span class="badge expired" title="${esc(cache.last_error)}（${cache.error_at ? fmtTimeAgo(cache.error_at) : ""}）">抓取失败·数据为${staleAge}前</span>`
       : "";
     // 用量列：能显示什么就显示什么
-    let usedHtml = failBadge || '<span class="badge" style="background:#e5e7eb;color:var(--text-2)">无数据</span>';
+    let usedHtml = failBadge || '<span class="badge inactive">无数据</span>';
     if (cache) {
+      const staleCls = isStale ? " badge-stale" : ""; // 失败时旧数据统一灰显
       const pct = cache.percent_used;
       const tags = [];
       if (pct !== null && pct !== undefined) {
         const usedCls = pct >= 90 ? "badge expired" : pct >= 70 ? "badge badge-warn" : "badge active";
         const remain = Math.max(0, 100 - pct);
         const remainCls = remain <= 10 ? "badge expired" : remain <= 30 ? "badge badge-warn" : "badge active";
-        tags.push(`<span class="${usedCls}">已用 ${pct}%</span>`);
-        tags.push(`<span class="${remainCls}">剩余 ${remain}%</span>`);
+        tags.push(`<span class="${usedCls}${staleCls}">已用 ${pct}%</span>`);
+        tags.push(`<span class="${remainCls}${staleCls}">剩余 ${remain}%</span>`);
       }
       if (cache.used !== null && cache.used !== undefined && cache.total !== null && cache.total !== undefined) {
-        tags.push(`<span class="badge active">${cache.used} / ${cache.total}${cache.unit ? " " + esc(cache.unit) : ""}</span>`);
+        tags.push(`<span class="badge active${staleCls}">${cache.used} / ${cache.total}${cache.unit ? " " + esc(cache.unit) : ""}</span>`);
       } else if (cache.total !== null && cache.total !== undefined) {
-        tags.push(`<span class="badge active">余额 ${cache.total}${cache.unit ? " " + esc(cache.unit) : ""}</span>`);
+        tags.push(`<span class="badge active${staleCls}">余额 ${cache.total}${cache.unit ? " " + esc(cache.unit) : ""}</span>`);
       }
-      if (cache.prepaid_balance) tags.push(`<span class="badge active">预付 ${esc(cache.prepaid_balance)}</span>`);
-      if (cache.credits_balance) tags.push(`<span class="badge active">Credits ${esc(cache.credits_balance)}</span>`);
-      if (cache.is_available === true) tags.push('<span class="badge active">可用</span>');
-      else if (cache.is_available === false) tags.push('<span class="badge expired">余额不足</span>');
-      if (cache.level) tags.push(`<span class="badge badge-cat">${esc(cache.level)}</span>`);
-      if (cache.model_count) tags.push(`<span class="badge badge-cat">${cache.model_count} 模型</span>`);
-      if (cache.session_percent !== null && cache.session_percent !== undefined) tags.push(`<span class="badge badge-cat">窗口 ${cache.session_percent}%</span>`);
+      if (cache.prepaid_balance) tags.push(`<span class="badge active${staleCls}">预付 ${esc(cache.prepaid_balance)}</span>`);
+      if (cache.credits_balance) tags.push(`<span class="badge active${staleCls}">Credits ${esc(cache.credits_balance)}</span>`);
+      if (cache.is_available === true) tags.push(`<span class="badge active${staleCls}">可用</span>`);
+      else if (cache.is_available === false) tags.push(`<span class="badge expired${staleCls}">余额不足</span>`);
+      if (cache.level) tags.push(`<span class="badge badge-cat${staleCls}">${esc(cache.level)}</span>`);
+      if (cache.model_count) tags.push(`<span class="badge badge-cat${staleCls}">${cache.model_count} 模型</span>`);
+      if (cache.session_percent !== null && cache.session_percent !== undefined) tags.push(`<span class="badge badge-cat${staleCls}">窗口 ${cache.session_percent}%</span>`);
       // 有数据但也有失败标记 → 红标放最前，旧数据照常显示（供参考最后成功值）
       if (tags.length) usedHtml = (failBadge ? failBadge + " " : "") + tags.join(" ");
     }
@@ -1434,11 +1439,27 @@ function flash(msg) {
   setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 2500);
 }
 
+/* ==================== 主题（日间 / 夜间） ==================== */
+function applyTheme(dark) {
+  document.documentElement.classList.toggle("dark", dark);
+  try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch (e) { /* 忽略存储失败 */ }
+  const btn = $("#btn-theme");
+  if (btn) {
+    // 夜间模式显示太阳（点击切回日间），日间显示月亮
+    btn.querySelector("use").setAttribute("href", `icons.svg#mdi-weather-${dark ? "sunny" : "night"}`);
+    btn.title = dark ? "切换日间模式" : "切换夜间模式";
+  }
+}
+function toggleTheme() { applyTheme(!document.documentElement.classList.contains("dark")); }
+
 /* ==================== 初始化 ==================== */
 async function init() {
   // 顶部事件
   document.querySelectorAll(".tab").forEach((t) => t.onclick = () => switchTab(t.dataset.tab));
   $("#btn-new-account").onclick = () => openForm(null);
+  $("#btn-theme").onclick = toggleTheme;
+  // 按钮图标/提示语与当前主题同步（类已在 index.html 内联脚本中先行设置）
+  applyTheme(document.documentElement.classList.contains("dark"));
   $("#search-input").oninput = (e) => { state.search = e.target.value; renderAccounts(); };
   $("#status-filter").onchange = (e) => { state.statusFilter = e.target.value; renderAccounts(); };
 
