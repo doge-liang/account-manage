@@ -13,16 +13,8 @@ cargo build --release   # portable exe → src-tauri/target/release/account-hub.
 ```
 
 - **portable 模式**：`account-hub.exe` 单文件可直接运行，数据目录在 exe 旁的 `app/data/`
-- **开发模式**：数据目录在仓库的 `app/data/`（与旧版共用）
+- **开发模式**：数据目录在仓库的 `app/data/`
 - 依赖：Windows 10/11（WebView2 系统自带）；开发时需要 Rust toolchain
-
-### 旧 Python 版（浏览器）
-
-```bash
-python app/server.py   # http://127.0.0.1:8756/
-```
-
-纯标准库，无 pip 依赖。与桌面版共用同一份前端（`app/static/`）和数据格式。
 
 ## 数据
 
