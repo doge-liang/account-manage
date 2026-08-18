@@ -51,8 +51,8 @@ html.dark {
   --badge-gray-text: #9aa1ad;
   --badge-blue-bg: #1f2c44;
   --badge-blue-text: #7cabf5;
-  --primary-btn: #6366f1;
-  --primary-btn-hover: #818cf8;
+  --primary-btn: #4f46e5;
+  --primary-btn-hover: #6366f1;
   --danger-btn: #dc2626;
   --danger-btn-hover: #ef4444;
   --shadow: 0 1px 3px rgba(0, 0, 0, .35), 0 1px 2px rgba(0, 0, 0, .2);
@@ -123,6 +123,7 @@ code { background: var(--muted); padding: 1px 5px; border-radius: 4px; font-size
   padding: 16px; box-shadow: var(--shadow);
 }
 .stat-num { font-size: 26px; font-weight: 700; }
+html.dark .stat-num { filter: brightness(1.35) saturate(.92); } /* 深色下提亮分类色，保证可读 */
 .stat-label { font-size: 12px; color: var(--text-2); margin-top: 2px; }
 .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
@@ -155,6 +156,7 @@ code { background: var(--muted); padding: 1px 5px; border-radius: 4px; font-size
   padding: 5px 12px; cursor: pointer; font-size: 13px; color: var(--text-2);
 }
 .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+html.dark .chip.active { color: #15171c; } /* 深色下主色较亮，改用深色文字 */
 
 /* ---- 表格 ---- */
 .acc-table { width: 100%; border-collapse: collapse; }

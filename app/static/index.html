@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>账号管家</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<script>
+  // 渲染前应用已保存的主题，避免夜间模式下打开时闪白
+  try {
+    if (localStorage.getItem("theme") === "dark") document.documentElement.classList.add("dark");
+  } catch (e) { /* localStorage 不可用时保持日间 */ }
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,6 +27,7 @@
   </nav>
   <div class="topbar-right">
     <span class="save-state" id="save-state"></span>
+    <button class="icon-btn" id="btn-theme" title="切换夜间模式"><svg class="ic" aria-hidden="true"><use href="icons.svg#mdi-weather-night"></use></svg></button>
     <button class="btn btn-primary" id="btn-new-account">+ 新增账号</button>
   </div>
 </header>
