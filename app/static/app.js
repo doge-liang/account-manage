@@ -876,7 +876,7 @@ async function renderVault() {
     <div class="kv-item"><div class="k">最后修改</div><div class="v">${esc(info.mtime || "—")}</div></div>
     <div class="kv-item"><div class="k">SHA-256</div><div class="v" style="font-size:11px">${esc(info.sha256 || "—")}</div></div>
     <div class="kv-item"><div class="k">文件有效性</div><div class="v">${info.valid_kdbx ? '<span class="badge active">${IC("check")} 合法 KDBX</span>' : '<span class="badge expired">${IC("close")} 不是 KDBX 文件</span>'}</div></div>`
-    : `<div class="empty-hint">密钥库文件不存在：${esc(info.path)}<br>请先在 keepassxc/ 下运行 <code>python init_vault.py</code>，或在设置中修改路径。</div>`;
+    : `<div class="empty-hint">密钥库文件不存在：${esc(info.path)}<br>请用 KeePassXC 客户端创建 .kdbx 库后，在下方「上传 / 替换密钥库」导入，或在设置中修改路径。</div>`;
 
   // 备份列表
   const bk = await apiGet("/api/vault/backups");

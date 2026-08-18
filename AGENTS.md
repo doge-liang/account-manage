@@ -47,7 +47,7 @@ app/static/        # 前端（vanilla JS）
 
 - 数据目录：dev 模式 = 仓库根 `app/data/`；portable exe = exe 旁 `app/data/`（`store.rs data_dir()`）
 - 用量 provider 定义：`USAGE_PROVIDERS`（Python 时代遗留命名，Rust 中在 `providers/mod.rs`）
-- `keepassxc/*.py` 是 KeePassXC 运维脚本（建库/取 key），不是应用后端，保留
+- `keepassxc/` 仅剩 `vaults/`（KeePassXC 库文件，gitignored 数据）。早期 Python 运维脚本（init_vault.py / key_helper.py）已随 Tauri 迁移清理；建库/改密直接用 KeePassXC 官方客户端，应用内「密钥库」页负责上传/下载/备份
 
 ## 双机同步
 

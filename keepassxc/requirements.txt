@@ -1,2 +1,0 @@
-pykeepass>=4.1.0
-openpyxl>=3.1.0
