@@ -29,6 +29,9 @@ pub async fn refresh_and_fetch(cfg: &Value) -> Value {
         .unwrap_or(GROK_OAUTH_CLIENT_ID)
         .to_string();
     let user_id = tok.extras.get("user_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    // 设备码登录（前端保存的 oauth_tokens 不含 user_id）→ 从 access_token 的 JWT sub 兜底，
+    // billing 请求的 x-userid 头依赖它，缺失会导致首轮抓取失败。
+    let user_id = if user_id.is_empty() { jwt_sub(&access_token) } else { user_id };
 
     // JWT exp 过期判断
     let token_expired = jwt_expired(&access_token);
@@ -177,31 +180,38 @@ async fn billing_request_curl(access_token: &str, user_id: &str) -> (u16, String
     }
 }
 
-fn jwt_expired(access_token: &str) -> bool {
+fn jwt_payload(access_token: &str) -> Option<Value> {
     use base64::Engine;
     let parts: Vec<&str> = access_token.split('.').collect();
     if parts.len() < 2 {
-        return true; // 无法解析 → 尝试刷新
+        return None;
     }
     let payload_b64 = parts[1];
     let decoded = base64::engine::general_purpose::URL_SAFE
         .decode(format!("{payload_b64}===").trim_end_matches('='))
         .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload_b64));
     match decoded {
-        Ok(bytes) => {
-            let payload: Value = match serde_json::from_slice(&bytes) {
-                Ok(p) => p,
-                Err(_) => return true,
-            };
-            let exp = payload.get("exp").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs_f64())
-                .unwrap_or(0.0);
-            now > exp
-        }
-        Err(_) => true,
+        Ok(bytes) => serde_json::from_slice(&bytes).ok(),
+        Err(_) => None,
     }
+}
+
+/// 提取 JWT 的 sub 声明（xAI 用户 id）——设备码登录的 token 里没有 user_id 字段时兜底用。
+fn jwt_sub(access_token: &str) -> String {
+    jwt_payload(access_token)
+        .and_then(|p| p.get("sub").and_then(|v| v.as_str()).map(String::from))
+        .unwrap_or_default()
+}
+
+fn jwt_expired(access_token: &str) -> bool {
+    let exp = jwt_payload(access_token)
+        .and_then(|p| p.get("exp").and_then(|v| v.as_f64()))
+        .unwrap_or(0.0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    now > exp
 }
 
 /// 刷新 token 并回写（config 模式 → cfg.oauth_tokens；file 模式 → auth.json）
@@ -258,8 +268,15 @@ async fn refresh_grok(
                 "user_id": user_id,
             }),
         );
-    } else {
-        // file 模式：回写 ~/.grok/auth.json
+    } else if cfg
+        .get("oauth_tokens")
+        .and_then(|v| v.as_object())
+        .map(|o| o.is_empty())
+        .unwrap_or(true)
+    {
+        // file 模式（cfg 自身没有 oauth_tokens，token 来自 CLI 文件）：回写 ~/.grok/auth.json。
+        // 注意：cfg 带自己的 oauth_tokens 但无 id（如测试路径）时绝不写文件——避免把
+        // 某个配置的账号凭证覆盖进共享的 CLI 认证文件，造成两账号凭证互相污染。
         let path = oauth::grok_auth_path();
         let file_data: Option<Value> = std::fs::read_to_string(&path)
             .ok()
@@ -371,7 +388,9 @@ pub async fn device_code_poll(payload: Value) -> Value {
     // 错误分支
     let err_code = obj.get("error").and_then(|v| v.as_str()).unwrap_or("");
     if err_code == "authorization_pending" || err_code == "slow_down" {
-        return json!({ "ok": true, "status": "pending", "error": err_code });
+        // 注意：ok:true 的响应不能带 error 字段——前端 api() 适配层会把任何带 error 的响应当失败抛错，
+        // 导致轮询在用户授权完成前就被中断（authorization_pending 只是 RFC 8628 的状态码，不是错误）。
+        return json!({ "ok": true, "status": "pending" });
     }
     json!({
         "ok": false, "status": "error",

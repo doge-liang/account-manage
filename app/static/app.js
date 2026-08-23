@@ -214,8 +214,9 @@ async function api(path, opts = {}) {
       if (args[k] === "__BODY__") args[k] = body || {};
     }
     const res = await INVOKE(route.cmd, args);
-    // 后端错误约定：{error: "..."}（Python 版通过 HTTP status 抛错，Tauri 版带在 body 里）
-    if (res && typeof res === "object" && res.error) throw new Error(res.error);
+    // 后端错误约定：{error: "..."}（Python 版通过 HTTP status 抛错，Tauri 版带在 body 里）。
+    // 但 ok:true 的响应即使带 error 字段（如 RFC 8628 设备码轮询的 authorization_pending）也不是失败。
+    if (res && typeof res === "object" && res.error && res.ok !== true) throw new Error(res.error);
     return res;
   }
   const res = await fetch(path, {
@@ -1206,7 +1207,7 @@ function openUsageConfigForm(id, preselectProvider) {
   $("#uc-modal-cancel").onclick = closeUsageConfigForm;
   $("#uc-modal-backdrop").onclick = (e) => { if (e.target === $("#uc-modal-backdrop")) closeUsageConfigForm(); };
   $("#uc-modal-save").onclick = () => saveUsageConfigForm(editing ? editing.id : null);
-  $("#uc-modal-test").onclick = () => testUsageConfig();
+  $("#uc-modal-test").onclick = () => testUsageConfig(editing ? editing.id : null);
 
   // provider 切换时显示/隐藏手动字段、重建账号下拉
   const toggleProviderFields = () => {
@@ -1327,7 +1328,7 @@ function openUsageConfigForm(id, preselectProvider) {
               statusEl.innerHTML = `${IC("check-circle")} 授权成功！token 已获取，点击保存生效`;
               oauthLoginBtn.disabled = false;
             } else if (r.ok && r.status === "pending") {
-              statusEl.innerHTML = statusEl.innerHTML.replace(/授权超时|授权成功|授权失败/g, "") + "<br>等待授权完成…";
+              statusEl.innerHTML = statusEl.innerHTML.replace(/授权超时|授权成功|授权失败|等待授权完成/g, "") + "<br>等待授权完成…";
               setTimeout(poll, interval);
             } else {
               statusEl.innerHTML = `${IC("close-circle")} 授权失败：${esc(r.error || "未知错误")}`;
@@ -1373,11 +1374,14 @@ function readUsageConfigForm() {
   };
 }
 
-async function testUsageConfig() {
+async function testUsageConfig(id) {
   const result = $("#uc-test-result");
   let payload;
   try { payload = readUsageConfigForm(); }
   catch (e) { alert(e.message); return; }
+  // 编辑态测试带上 id：后端据此合并已保存的 oauth_tokens，
+  // 否则测试会 fallback 到 ~/.grok/auth.json 的 CLI 账号，出现"两个账号凭证冲突"。
+  if (id) payload.id = id;
   const isProv = !!payload.provider;
   if (!isProv && (!payload.url || (!payload.jsonpath_used && !payload.jsonpath_total))) {
     alert("URL 和至少一个取值路径不能为空");

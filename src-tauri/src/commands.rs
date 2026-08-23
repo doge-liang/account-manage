@@ -458,6 +458,32 @@ pub fn get_usage_providers() -> Value {
 
 #[tauri::command]
 pub async fn test_usage_config(payload: Value) -> Result<Value, ()> {
+    let mut payload = payload;
+    // 编辑态测试：表单不回传已保存的 oauth_tokens（readUsageConfigForm 只在有新登录时才带）。
+    // 若 payload 的 oauth_tokens 为空且有 id，从存储合并该配置已保存的 token——
+    // 否则 get_tokens 会 fallback 到 ~/.grok/auth.json，测试结果落到 CLI 账号上（账号凭证冲突）。
+    if payload
+        .get("oauth_tokens")
+        .and_then(|v| v.as_object())
+        .map(|o| o.is_empty())
+        .unwrap_or(true)
+    {
+        if let Some(id) = payload.get("id").and_then(|v| v.as_str()) {
+            let data = store::load_data_raw();
+            if let Some(c) = data["usage_configs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["id"] == json!(id))
+            {
+                if let Some(ot) = c.get("oauth_tokens") {
+                    if !ot.is_null() {
+                        payload["oauth_tokens"] = ot.clone();
+                    }
+                }
+            }
+        }
+    }
     Ok(crate::providers::do_fetch(&payload, false).await)
 }
 
