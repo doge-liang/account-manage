@@ -32,6 +32,7 @@ pub fn run() {
             commands::delete_usage_config,
             commands::test_usage_config,
             commands::fetch_usage,
+            commands::dashscope_models,
             commands::import_data,
             commands::reset_data,
             commands::grok_device_code_start,

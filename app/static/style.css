@@ -350,6 +350,23 @@ html.dark .chip.active { color: #15171c; } /* 深色下主色较亮，改用深�
 }
 .jsonpath-help code { font-size: 11px; }
 
+/* ---- 百炼可用模型列表 ---- */
+#uc-models-row { display: flex; align-items: center; gap: 10px; }
+.models-toolbar { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; font-size: 13px; flex-wrap: wrap; }
+.models-toolbar .models-count { color: var(--text-2); font-size: 12px; }
+.models-filter { flex: 1; min-width: 140px; }
+.models-list { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--muted-2); }
+.model-row { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.model-row:last-child { border-bottom: none; }
+.model-row:hover { background: var(--muted); }
+.model-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.model-id { font-family: ui-monospace, Consolas, monospace; font-size: 13px; font-weight: 600; color: var(--text); }
+.model-name { font-size: 12px; color: var(--text-2); }
+.model-prov { font-size: 11px; color: var(--text-2); background: var(--badge-gray-bg); border-radius: 4px; padding: 1px 6px; }
+.model-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.model-price { font-size: 11px; color: var(--primary); }
+.model-desc { font-size: 11px; color: var(--text-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
 /* ---- hidden 属性必须优先于任何 display 声明 ---- */
 .modal-backdrop[hidden],
 .drawer-backdrop[hidden],

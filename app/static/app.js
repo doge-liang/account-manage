@@ -1414,6 +1414,64 @@ async function testUsageConfig() {
   }
 }
 
+/* 百炼模型列表：压缩价格字段为「输入 12 · 输出 36 · 缓存命中 1.5 元/百万tokens」 */
+function fmtDashscopePrices(prices) {
+  if (!Array.isArray(prices) || !prices.length) return "";
+  const LABEL = { input_token: "输入", output_token: "输出", input_token_cache: "缓存命中" };
+  const byType = {};
+  for (const p of prices) {
+    const t = p && p.type;
+    if (!LABEL[t] || p.price === undefined || p.price === null || p.price === "") continue;
+    (byType[t] = byType[t] || []).push(String(p.price));
+  }
+  const parts = Object.entries(byType).map(([t, vals]) => `${LABEL[t]} ${[...new Set(vals)].join("/")}`);
+  return parts.length ? parts.join(" · ") + " 元/百万tokens" : "";
+}
+
+/* 百炼可用模型列表渲染：工具条（总数 + 筛选）+ 滚动列表 */
+function renderDashscopeModels(res) {
+  const panel = $("#uc-models-panel");
+  if (!panel) return;
+  panel.hidden = false;
+  const list = (res && res.models) || [];
+  const total = (res && res.total) || list.length;
+  const rows = list.map((m) => {
+    const price = fmtDashscopePrices(m.prices);
+    const feats = (m.features || []).map((f) => `<span class="badge badge-cat">${esc(f)}</span>`).join(" ");
+    const prov = m.provider && typeof m.provider === "string" ? m.provider : "";
+    return `<div class="model-row" data-q="${esc(((m.model || "") + " " + (m.name || "") + " " + prov).toLowerCase())}">
+      <div class="model-head">
+        <span class="model-id">${esc(m.model || "—")}</span>
+        ${m.name && m.name !== m.model ? `<span class="model-name">${esc(m.name)}</span>` : ""}
+        ${prov ? `<span class="model-prov">${esc(prov)}</span>` : ""}
+      </div>
+      ${price || feats ? `<div class="model-meta">${price ? `<span class="model-price">${esc(price)}</span>` : ""} ${feats}</div>` : ""}
+      ${m.description ? `<div class="model-desc" title="${esc(m.description)}">${esc(m.description)}</div>` : ""}
+    </div>`;
+  }).join("");
+  panel.innerHTML = `
+    <div class="models-toolbar">
+      <b>${IC("database")} 可用模型 ${total} 个</b>
+      <span class="models-count"></span>
+      <input class="input-box models-filter" id="uc-models-filter" type="search" placeholder="筛选：模型 ID / 名称 / 厂商">
+    </div>
+    <div class="models-list" id="uc-models-list">${rows}</div>`;
+  const filter = $("#uc-models-filter");
+  if (filter) {
+    filter.oninput = () => {
+      const q = filter.value.trim().toLowerCase();
+      let shown = 0;
+      panel.querySelectorAll(".model-row").forEach((r) => {
+        const ok = !q || r.dataset.q.includes(q);
+        r.style.display = ok ? "" : "none";
+        if (ok) shown++;
+      });
+      const cnt = panel.querySelector(".models-count");
+      if (cnt) cnt.textContent = q ? `（命中 ${shown}）` : "";
+    };
+  }
+}
+
 async function saveUsageConfigForm(id) {
   let payload;
   try { payload = readUsageConfigForm(); }

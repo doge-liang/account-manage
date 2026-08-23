@@ -457,3 +457,71 @@ pub async fn dashscope_fetch(cfg: &Value) -> Value {
     }
     json!({ "ok": true, "status": status, "result": result })
 }
+
+/// DashScope 可用模型列表 — 分页拉取 /api/v1/models 全量（486 个），
+/// 每条压缩为展示所需字段（id/名称/简介/功能/价格/provider）。
+pub async fn dashscope_models_fetch(cfg: &Value) -> Value {
+    let api_key = cfg.get("api_key").and_then(|v| v.as_str()).unwrap_or("");
+    if api_key.is_empty() {
+        return no_key();
+    }
+    let mut all: Vec<Value> = Vec::new();
+    let mut total: Option<i64> = None;
+    let mut status_final = 0u16;
+    for page in 1..=10 {
+        let url = format!(
+            "https://dashscope.aliyuncs.com/api/v1/models?page_no={page}&page_size=100"
+        );
+        let (status, text, err) = apikey_get(&url, api_key, "bearer").await;
+        status_final = status;
+        if !err.is_empty() {
+            return http_err(&err, status, &text);
+        }
+        let obj: Value = match serde_json::from_str(&text) {
+            Ok(o) => o,
+            Err(_) => return bad_json(status, &text),
+        };
+        if obj.get("success") == Some(&json!(false)) {
+            let msg = obj.get("message").and_then(|v| v.as_str()).unwrap_or("API 返回错误");
+            return http_err(msg, status, &text);
+        }
+        if total.is_none() {
+            total = obj.pointer("/output/total").and_then(|v| v.as_i64());
+        }
+        let models = obj
+            .pointer("/output/models")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if models.is_empty() {
+            break;
+        }
+        for m in &models {
+            let desc = m.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let slim = json!({
+                "model": m.get("model").and_then(|v| v.as_str()).unwrap_or(""),
+                "name": m.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                "description": desc.chars().take(140).collect::<String>(),
+                "features": m.get("features").cloned().unwrap_or(Value::Array(vec![])),
+                "provider": m.get("provider").cloned().unwrap_or(Value::Null),
+                "prices": m.get("prices").and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|g| g.get("prices"))
+                    .cloned()
+                    .unwrap_or(Value::Array(vec![])),
+            });
+            all.push(slim);
+        }
+        if models.len() < 100 || all.len() as i64 >= total.unwrap_or(i64::MAX) {
+            break;
+        }
+    }
+    json!({
+        "ok": true, "status": status_final,
+        "result": {
+            "fetched_at": now_iso(),
+            "total": total.unwrap_or(all.len() as i64),
+            "models": all,
+        }
+    })
+}

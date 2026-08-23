@@ -461,6 +461,12 @@ pub async fn test_usage_config(payload: Value) -> Result<Value, ()> {
     Ok(crate::providers::do_fetch(&payload, false).await)
 }
 
+/// DashScope 可用模型列表（分页拉全 /api/v1/models，前端「查看可用模型」用）
+#[tauri::command]
+pub async fn dashscope_models(payload: Value) -> Result<Value, ()> {
+    Ok(crate::providers::apikey::dashscope_models_fetch(&payload).await)
+}
+
 #[tauri::command]
 pub async fn fetch_usage(id: String) -> Result<Value, ()> {
     let data = store::load_data_raw();
