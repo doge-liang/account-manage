@@ -32,7 +32,16 @@ Desktop.ini
 # 用量缓存（临时数据）
 app/data/usage_cache.json*
 
+# Syncthing 冲突残留（含真实密钥，永不提交）
+app/data/*.sync-conflict-*.json
+
 
 # Rust
 src-tauri/target/
 src-tauri/gen/
+
+# 构建产物（portable exe 拷出仓库根时防止误提交）
+/account-hub.exe
+
+# 会话内部文件（截图等，不属于应用）
+/.hermes/
