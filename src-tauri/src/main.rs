@@ -37,7 +37,7 @@ pub fn run() {
             commands::reset_data,
             commands::grok_device_code_start,
             commands::grok_device_code_poll,
-            // commands::oauth_import_from_cli, // 前端未接线（Python 版同样未实现），保留命令定义待用
+            commands::oauth_import_from_cli,
             commands::vault_info,
             commands::vault_download,
             commands::vault_backups,

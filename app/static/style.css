@@ -1,12 +1,16 @@
 /* 账号管家 — 界面样式 */
 :root {
-  --bg: #f4f5f7;
+  --bg: #f6f7f9;
   --card: #ffffff;
-  --border: #e3e6ea;
-  --text: #1f2430;
+  --border: #e6e8ec;
+  --text: #1a1d27;
   --text-2: #5b6472;
   --primary: #4f46e5;
+  --primary-strong: #4338ca;
   --primary-soft: #eef0ff;
+  --accent: #6366f1;
+  --grad-start: #6366f1;
+  --grad-end: #8b5cf6;
   --danger: #dc2626;
   --danger-soft: #fee2e2;
   --ok: #16a34a;
@@ -15,7 +19,7 @@
   --warn-soft: #fef3c7;
   --muted: #f0f1f4;      /* 悬停底色 / 行内代码底 */
   --muted-2: #f8f9fb;    /* 二级底色（kv-item、jsonpath-help、表格悬停） */
-  --bar-track: #eef0f3;  /* 用量进度条轨道 */
+  --bar-track: #eceef2;  /* 用量进度条轨道 */
   --badge-gray-bg: #e5e7eb;
   --badge-gray-text: #5b6472;
   --badge-blue-bg: #e8f0fe;
@@ -24,20 +28,27 @@
   --primary-btn-hover: #4338ca;
   --danger-btn: #dc2626;
   --danger-btn-hover: #b91c1c;
-  --radius: 10px;
-  --shadow: 0 1px 3px rgba(16, 24, 40, .08), 0 1px 2px rgba(16, 24, 40, .04);
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
+  --shadow-lift: 0 4px 14px rgba(16, 24, 40, .07), 0 1px 3px rgba(16, 24, 40, .05);
+  --topbar-bg: rgba(255, 255, 255, .82);
+  --glow: radial-gradient(closest-side, rgba(99, 102, 241, .07), transparent);
   --backdrop: rgba(15, 23, 42, .35);
   --backdrop-strong: rgba(15, 23, 42, .45);
   color-scheme: light;
 }
 html.dark {
-  --bg: #15171c;
-  --card: #1e2128;
-  --border: #33363e;
+  --bg: #131519;
+  --card: #1b1e24;
+  --border: #2e313a;
   --text: #e6e8ec;
   --text-2: #9aa1ad;
   --primary: #8b8cf7;
+  --primary-strong: #a5a6fa;
   --primary-soft: #2a2d3f;
+  --accent: #818cf8;
+  --grad-start: #6366f1;
+  --grad-end: #a78bfa;
   --danger: #f87171;
   --danger-soft: #3a2226;
   --ok: #4ade80;
@@ -45,8 +56,8 @@ html.dark {
   --warn: #fbbf24;
   --warn-soft: #38301d;
   --muted: #2a2d35;
-  --muted-2: #242730;
-  --bar-track: #2f323b;
+  --muted-2: #22252c;
+  --bar-track: #2b2e37;
   --badge-gray-bg: #33363e;
   --badge-gray-text: #9aa1ad;
   --badge-blue-bg: #1f2c44;
@@ -56,6 +67,9 @@ html.dark {
   --danger-btn: #dc2626;
   --danger-btn-hover: #ef4444;
   --shadow: 0 1px 3px rgba(0, 0, 0, .35), 0 1px 2px rgba(0, 0, 0, .2);
+  --shadow-lift: 0 6px 18px rgba(0, 0, 0, .45), 0 2px 5px rgba(0, 0, 0, .25);
+  --topbar-bg: rgba(27, 30, 36, .82);
+  --glow: radial-gradient(closest-side, rgba(129, 140, 248, .05), transparent);
   --backdrop: rgba(0, 0, 0, .55);
   --backdrop-strong: rgba(0, 0, 0, .65);
   color-scheme: dark;
@@ -71,12 +85,14 @@ body {
   line-height: 1.55;
 }
 
-/* ---- 顶栏 ---- */
+/* ---- 顶栏（磨砂玻璃） ---- */
 .topbar {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; gap: 24px;
   padding: 0 20px; height: 56px;
-  background: var(--card);
+  background: var(--topbar-bg);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
@@ -108,23 +124,67 @@ body {
 main { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
+/* 仪表盘页首光晕：主色渐隐，营造层次 */
+#tab-dashboard.active {
+  position: relative;
+}
+#tab-dashboard.active::before {
+  content: "";
+  position: absolute; top: -20px; left: 50%;
+  width: min(920px, 96vw); height: 340px;
+  transform: translateX(-50%);
+  background: var(--glow);
+  pointer-events: none;
+}
 .card {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow);
+  transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease;
 }
+.card:hover { box-shadow: var(--shadow-lift); }
 .card h3 { margin: 0 0 12px; font-size: 15px; }
 .hint { color: var(--text-2); font-size: 13px; margin: 4px 0 12px; }
 code { background: var(--muted); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
 /* ---- 统计卡片 ---- */
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px; margin-bottom: 16px;
+  position: relative; /* 盖在页面光晕上 */
+}
 .stat-card {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px; box-shadow: var(--shadow);
+  padding: 14px 16px; box-shadow: var(--shadow);
+  display: flex; align-items: center; gap: 12px;
+  transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease;
 }
-.stat-num { font-size: 26px; font-weight: 700; }
-html.dark .stat-num { filter: brightness(1.35) saturate(.92); } /* 深色下提亮分类色，保证可读 */
+.stat-card:hover {
+  box-shadow: var(--shadow-lift);
+  border-color: color-mix(in srgb, var(--stat-c, var(--primary)) 35%, var(--border));
+  transform: translateY(-1px);
+}
+/* 图标色块：柔和底 + 分类色图标 */
+.stat-ic {
+  width: 38px; height: 38px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 19px;
+  background: color-mix(in srgb, var(--stat-c, var(--primary)) 13%, transparent);
+  color: var(--stat-c, var(--primary));
+}
+html.dark .stat-ic { background: color-mix(in srgb, var(--stat-c, var(--primary)) 22%, transparent); }
+.stat-body { min-width: 0; }
+.stat-num {
+  font-size: 24px; font-weight: 700; line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+  color: var(--stat-c, var(--text));
+}
 .stat-label { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+@supports not (color: color-mix(in srgb, red 10%, blue)) {
+  .stat-ic { background: var(--muted); }
+  .stat-card:hover { border-color: var(--stat-c, var(--primary)); }
+}
 .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
 
@@ -278,10 +338,13 @@ html.dark .chip.active { color: #15171c; } /* 深色下主色较亮，改用深�
 }
 .usage-item {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 12px 14px;
-  background: var(--muted-2);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  transition: box-shadow .2s ease, border-color .2s ease;
 }
+.usage-item:hover { box-shadow: var(--shadow-lift); }
 .usage-item .ui-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px; margin-bottom: 8px;
@@ -292,24 +355,29 @@ html.dark .chip.active { color: #15171c; } /* 深色下主色较亮，改用深�
 }
 .usage-item .ui-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .usage-item .ui-pct {
-  font-weight: 700; font-size: 13px; flex: none;
-  padding: 1px 8px; border-radius: 999px;
+  font-weight: 700; font-size: 12px; flex: none;
+  padding: 2px 9px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary);
+  font-variant-numeric: tabular-nums;
 }
+.usage-item .ui-pct.warn { background: var(--warn-soft); color: var(--warn); }
+.usage-item .ui-pct.danger { background: var(--danger-soft); color: var(--danger); }
+.usage-item .ui-pct.ui-pct-stale { opacity: .5; filter: grayscale(.4); }
 .usage-bar {
   position: relative;
-  height: 10px;
+  height: 8px;
   background: var(--bar-track);
   border-radius: 999px;
   overflow: visible; /* 让时间刻度线能露出来 */
 }
 .usage-bar > .ub-fill {
   position: absolute; left: 0; top: 0; bottom: 0;
-  background: var(--primary);
+  background: linear-gradient(90deg, var(--grad-start), var(--grad-end));
   border-radius: 999px;
   transition: width .4s ease;
 }
-.usage-bar > .ub-fill.warn { background: var(--warn); }
-.usage-bar > .ub-fill.danger { background: var(--danger); }
+.usage-bar > .ub-fill.warn { background: linear-gradient(90deg, #f59e0b, #f97316); }
+.usage-bar > .ub-fill.danger { background: linear-gradient(90deg, #ef4444, #f43f5e); }
 /* 时间进度刻度线：竖线标记「现在时间走到哪了」，用量条超过它=超速 */
 .usage-bar > .ub-pace-mark {
   position: absolute; top: -2px; bottom: -2px; width: 2px;
@@ -329,9 +397,15 @@ html.dark .chip.active { color: #15171c; } /* 深色下主色较亮，改用深�
 }
 .pace-badge.pace-ahead { background: var(--danger-soft); color: var(--danger); }
 .pace-badge.pace-behind { background: var(--badge-blue-bg); color: var(--badge-blue-text); }
+/* 配速区图标放大到固定像素，不跟随 10-11px 小字缩放 */
+.pace-line .ic { width: 14px; height: 14px; }
+.pace-badge .ic { width: 12px; height: 12px; vertical-align: -0.15em; }
 .usage-item.pace-alert {
-  outline: 1px solid var(--danger);
-  outline-offset: -1px;
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 12%, transparent);
+}
+@supports not (color: color-mix(in srgb, red 10%, blue)) {
+  .usage-item.pace-alert { outline: 1px solid var(--danger); outline-offset: -1px; }
 }
 /* 失败条目的旧数据徽标：灰显，表明是历史值而非当前值 */
 .badge-stale, .badge.badge-stale {
