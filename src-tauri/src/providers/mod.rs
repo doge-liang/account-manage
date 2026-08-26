@@ -150,8 +150,12 @@ pub fn normalize_reset_at(v: &Value) -> Option<String> {
     // 纯数字 → epoch（秒 10 位 / 毫秒 13 位）
     if s.chars().all(|c| c.is_ascii_digit()) {
         let num: i64 = s.parse().ok()?;
-        let secs = if num > 1_000_000_000_000 { num / 1000 } else { num };
-        let dt = chrono::DateTime::from_timestamp(secs, 0)?;
+        // epoch 毫秒（13 位）保留毫秒精度，epoch 秒（10 位）直接转
+        let dt = if num > 1_000_000_000_000 {
+            chrono::DateTime::from_timestamp(num / 1000, ((num % 1000) * 1_000_000) as u32)?
+        } else {
+            chrono::DateTime::from_timestamp(num, 0)?
+        };
         return Some(dt.to_rfc3339());
     }
     // 已经是 ISO → 原样
@@ -251,3 +255,25 @@ async fn custom_fetch(cfg: &Value) -> Value {
 }
 
 pub use err_result as make_err;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_reset_at_handles_epoch_ms_number() {
+        // GLM nextResetTime / MiniMax end_time 是 13 位 epoch 毫秒数字
+        let v = json!(1788225457998i64);
+        assert_eq!(normalize_reset_at(&v).unwrap(), "2026-09-01T01:17:37.998+00:00");
+    }
+
+    #[test]
+    fn normalize_reset_at_handles_epoch_sec_and_iso() {
+        assert_eq!(
+            normalize_reset_at(&json!(1690000000i64)).unwrap(),
+            "2023-07-22T04:26:40+00:00"
+        );
+        let iso = "2026-08-30T03:41:40.292317Z";
+        assert_eq!(normalize_reset_at(&json!(iso)).unwrap(), iso);
+    }
+}

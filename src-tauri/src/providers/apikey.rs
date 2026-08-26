@@ -75,23 +75,25 @@ pub async fn glm_fetch(cfg: &Value) -> Value {
     let level = obj.pointer("/data/level").cloned();
     let mut weekly_pct: Option<f64> = None;
     let mut session_pct: Option<f64> = None;
-    let mut reset_at: Option<String> = None;
+    let mut reset_at: Option<Value> = None;
     for lim in &limits {
         let unit = lim.get("unit").and_then(|v| v.as_i64()).unwrap_or(0);
         let pct = lim.get("percentage").and_then(|v| parse_numeric(v));
+        // 重置时间可能是 ISO 字符串或 epoch 毫秒数字（实测 nextResetTime 为 13 位数字），
+        // 统一收 Value，末尾交给 normalize_reset_at 归一化
         let rt = ["nextResetTime", "resetTime", "reset_time"]
             .iter()
-            .find_map(|k| lim.get(*k).and_then(|v| v.as_str()));
+            .find_map(|k| lim.get(*k).cloned());
         if unit == 6 {
             if let Some(p) = pct {
                 weekly_pct = Some(p);
-                reset_at = rt.map(String::from);
+                reset_at = rt.clone();
             }
         } else if unit == 3 {
             if let Some(p) = pct {
                 session_pct = Some(p);
                 if reset_at.is_none() {
-                    reset_at = rt.map(String::from);
+                    reset_at = rt.clone();
                 }
             }
         }
@@ -110,7 +112,7 @@ pub async fn glm_fetch(cfg: &Value) -> Value {
     if let Some(sp) = session_pct {
         result["session_percent"] = json!(sp);
     }
-    if let Some(r) = reset_at.as_ref().and_then(|s| crate::providers::normalize_reset_at(&json!(s))) {
+    if let Some(r) = reset_at.as_ref().and_then(|v| crate::providers::normalize_reset_at(v)) {
         result["reset_at"] = json!(r);
     }
     json!({ "ok": true, "status": status, "result": result })
@@ -131,7 +133,7 @@ pub async fn kimi_fetch(cfg: &Value) -> Value {
         Err(_) => return bad_json(status, &text),
     };
     let mut session_pct: Option<f64> = None;
-    let mut reset_at: Option<String> = None;
+    let mut reset_at: Option<Value> = None;
     // 5h 窗口：limits[].detail
     if let Some(limits) = obj.get("limits").and_then(|v| v.as_array()) {
         for item in limits {
@@ -146,8 +148,7 @@ pub async fn kimi_fetch(cfg: &Value) -> Value {
                     session_pct = Some(((1.0 - r / l) * 100.0 * 10.0).round() / 10.0);
                     reset_at = ["resetTime", "reset_time"]
                         .iter()
-                        .find_map(|k| detail.get(*k).and_then(|v| v.as_str()))
-                        .map(String::from);
+                        .find_map(|k| detail.get(*k).cloned());
                     break;
                 }
             }
@@ -165,11 +166,11 @@ pub async fn kimi_fetch(cfg: &Value) -> Value {
                 percent_used = Some(((1.0 - r / l) * 100.0 * 10.0).round() / 10.0);
                 used_val = Some(((l - r) * 10.0).round() / 10.0);
                 total_val = Some(l);
-                let wreset = ["resetTime", "reset_time"]
+                if let Some(w) = ["resetTime", "reset_time"]
                     .iter()
-                    .find_map(|k| usage.get(*k).and_then(|v| v.as_str()));
-                if wreset.is_some() {
-                    reset_at = wreset.map(String::from);
+                    .find_map(|k| usage.get(*k).cloned())
+                {
+                    reset_at = Some(w);
                 }
             }
         }
@@ -187,7 +188,7 @@ pub async fn kimi_fetch(cfg: &Value) -> Value {
     if let Some(sp) = session_pct {
         result["session_percent"] = json!(sp);
     }
-    if let Some(r) = reset_at.as_ref().and_then(|s| crate::providers::normalize_reset_at(&json!(s))) {
+    if let Some(r) = reset_at.as_ref().and_then(|v| crate::providers::normalize_reset_at(v)) {
         result["reset_at"] = json!(r);
     }
     json!({ "ok": true, "status": status, "result": result })
@@ -229,7 +230,7 @@ pub async fn minimax_fetch(cfg: &Value) -> Value {
         .find(|m| m.get("model_name").and_then(|v| v.as_str()) == Some("general"));
     let mut percent_used: Option<f64> = None;
     let mut session_pct: Option<f64> = None;
-    let mut reset_at: Option<String> = None;
+    let mut reset_at: Option<Value> = None;
     if let Some(g) = general {
         // 5h 窗口
         let remain5 = [
@@ -243,8 +244,7 @@ pub async fn minimax_fetch(cfg: &Value) -> Value {
             session_pct = Some(((100.0 - r5) * 10.0).round() / 10.0);
             reset_at = ["end_time", "endTime"]
                 .iter()
-                .find_map(|k| g.get(*k).and_then(|v| v.as_str()))
-                .map(String::from);
+                .find_map(|k| g.get(*k).cloned());
         }
         // 周配额（status==1 才激活）
         let weekly_status = ["current_weekly_status", "currentWeeklyStatus"]
@@ -261,11 +261,11 @@ pub async fn minimax_fetch(cfg: &Value) -> Value {
             .find_map(|v| parse_numeric(v));
             if let Some(rw) = remain_w {
                 percent_used = Some(((100.0 - rw) * 10.0).round() / 10.0);
-                let wreset = ["weekly_end_time", "weeklyEndTime"]
+                if let Some(w) = ["weekly_end_time", "weeklyEndTime"]
                     .iter()
-                    .find_map(|k| g.get(*k).and_then(|v| v.as_str()));
-                if wreset.is_some() {
-                    reset_at = wreset.map(String::from);
+                    .find_map(|k| g.get(*k).cloned())
+                {
+                    reset_at = Some(w);
                 }
             }
         }
@@ -283,7 +283,7 @@ pub async fn minimax_fetch(cfg: &Value) -> Value {
     if let Some(sp) = session_pct {
         result["session_percent"] = json!(sp);
     }
-    if let Some(r) = reset_at.as_ref().and_then(|s| crate::providers::normalize_reset_at(&json!(s))) {
+    if let Some(r) = reset_at.as_ref().and_then(|v| crate::providers::normalize_reset_at(v)) {
         result["reset_at"] = json!(r);
     }
     json!({ "ok": true, "status": status, "result": result })
