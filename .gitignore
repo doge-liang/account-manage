@@ -8,9 +8,7 @@ keepassxc/installer/
 MASTER_PASSWORD.txt
 
 # 应用数据（含真实密钥，通过 Syncthing 同步，禁止提交）
-app/data/accounts.json
-app/data/backups/
-app/data/usage_cache.json*
+app/data/
 
 # 环境与密钥
 .env
@@ -42,6 +40,7 @@ src-tauri/gen/
 
 # 构建产物（portable exe 拷出仓库根时防止误提交）
 /account-hub.exe
+/release/
 
 # 会话内部文件（截图等，不属于应用）
 /.hermes/
