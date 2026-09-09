@@ -117,7 +117,9 @@ pub async fn refresh_and_fetch(cfg: &Value) -> Value {
     if let Some(credits) = obj.get("credits").and_then(|v| v.as_object()) {
         if let Some(bal) = credits.get("balance") {
             if !bal.is_null() {
-                result["credits_balance"] = json!(bal.to_string());
+                // 取字符串原始值；数字则序列化（避免 JSON 字符串被 to_string() 带上引号）
+                let bal_str = bal.as_str().map(String::from).unwrap_or_else(|| bal.to_string());
+                result["credits_balance"] = json!(bal_str);
             }
         }
     }

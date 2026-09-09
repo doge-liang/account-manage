@@ -83,7 +83,9 @@ pub async fn refresh_and_fetch(cfg: &Value) -> Value {
     if let Some(pb) = config.get("prepaidBalance").and_then(|v| v.as_object()) {
         if let Some(val) = pb.get("val") {
             if !val.is_null() {
-                result["prepaid_balance"] = json!(val.to_string());
+                // 取字符串原始值；数字则序列化（避免 JSON 字符串被 to_string() 带上引号）
+                let val_str = val.as_str().map(String::from).unwrap_or_else(|| val.to_string());
+                result["prepaid_balance"] = json!(val_str);
             }
         }
     }

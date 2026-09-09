@@ -447,7 +447,7 @@ function renderDashboardUsage() {
     const parts = [];
     if (pct !== null) parts.push(`${sem} ${pct}%`);
     if (used !== null && total !== null) parts.push(`${fmtNum(used)} / ${fmtNum(total)}${unit ? " " + esc(unit) : ""}`);
-    else if (total !== null) parts.push(`余额 ${fmtNum(total)}${unit ? " " + esc(unit) : ""}`);
+    else if (total !== null) parts.push(`余额 ${esc(fmtNum(total))}${unit ? " " + esc(unit) : ""}`);
     if (data.is_available === true) parts.push("可用");
     else if (data.is_available === false) parts.push("余额不足");
     if (data.granted_balance && data.granted_balance !== "0.00" && data.granted_balance !== "0") parts.push(`赠送 ${esc(data.granted_balance)}`);
@@ -492,7 +492,7 @@ function renderDashboardUsage() {
         </div>
         ${hasBar ? `<div class="usage-bar"${isStale ? ' style="opacity:.45"' : ""}><div class="ub-fill ${fillCls}" style="width:${widthPct}%"></div><div class="ub-pace-mark" style="left:${Math.min(100, Math.round(pace ? pace.timePct : 0))}%" title="时间进度 ${pace ? Math.round(pace.timePct) : '?'}%"></div></div>` : ""}
         <div class="ui-meta"${staleAttr}>
-          <span>${esc(summary)}</span>
+          <span>${summary}</span>
           <span>${esc(sourceLabel)}</span>
         </div>
         ${paceLine}
